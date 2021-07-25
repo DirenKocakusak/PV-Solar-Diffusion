@@ -1,0 +1,1148 @@
+---
+title: "California Policy Analysis"
+author: "Diren Kocakusak"
+date: "10/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries
+```{r}
+library(readr)
+library(car)
+library(prais)
+library(ggplot2)
+```
+
+# Import and Clean California PG&E Dataset: Data obtained from https://www.californiadgstats.ca.gov/downloads/
+```{r}
+pge <- read_csv("~/Desktop/Understanding Individuals’ Decisions to Install Photovoltaic Solar Panels/Quantitative Analysis/Datasets/States/California/PGE_Interconnected_Project_Sites_Dataset_2020-06-30.csv")
+as.data.frame(table(pge$`Customer Sector`))
+pge_clean <- pge[which(pge$`Customer Sector` == "Residential"), ]
+as.data.frame(table(pge_clean$`Technology Type`))
+pge_clean <- pge_clean[which(pge_clean$`Technology Type` == "Solar PV"), ]
+```
+
+## Organize Date and Remove Other Variables
+```{r}
+which(is.na(pge_clean$`App Approved Date`))
+names(pge_clean)[names(pge_clean) == 'App Approved Date'] <- 'date'
+names(pge_clean)[names(pge_clean) == 'Application Id'] <- 'application'
+pge_clean <- subset(pge_clean, select = c(application, date))
+```
+
+# Import and Clean California Southern California Edison Dataset: Data obtained from https://www.californiadgstats.ca.gov/downloads/
+```{r}
+sce <- read_csv("~/Desktop/Understanding Individuals’ Decisions to Install Photovoltaic Solar Panels/Quantitative Analysis/Datasets/States/California/SCE_Interconnected_Project_Sites_Dataset_2020-06-30.csv")
+as.data.frame(table(sce$`Customer Sector`))
+sce_clean <- sce[which(sce$`Customer Sector` == "Residential"), ]
+as.data.frame(table(sce_clean$`Technology Type`))
+sce_clean <- sce_clean[which(sce_clean$`Technology Type` == "Solar PV"), ]
+```
+
+## Organize Date and Remove Other Variables
+```{r}
+which(is.na(sce_clean$`App Approved Date`))
+names(sce_clean)[names(sce_clean) == 'App Approved Date'] <- 'date'
+names(sce_clean)[names(sce_clean) == 'Application Id'] <- 'application'
+sce_clean <- subset(sce_clean, select = c(application, date))
+```
+
+# Import and Clean California San Diego Gas & Electric Dataset: Data obtained from https://www.californiadgstats.ca.gov/downloads/
+```{r}
+sdge <- read_csv("~/Desktop/Understanding Individuals’ Decisions to Install Photovoltaic Solar Panels/Quantitative Analysis/Datasets/States/California/SDGE_Interconnected_Project_Sites_Dataset_2020-06-30.csv")
+as.data.frame(table(sdge$`Customer Sector`))
+sdge_clean <- sdge[which(sdge$`Customer Sector` == "Residential"), ]
+as.data.frame(table(sdge_clean$`Technology Type`))
+sdge_clean <- sdge_clean[which(sdge_clean$`Technology Type` == "Solar"), ]
+```
+
+## Organize Date and Remove Other Variables
+```{r}
+which(is.na(sdge_clean$`App Approved Date`))
+names(sdge_clean)[names(sdge_clean) == 'App Approved Date'] <- 'date'
+names(sdge_clean)[names(sdge_clean) == 'Application Id'] <- 'application'
+sdge_clean <- subset(sdge_clean, select = c(application, date))
+```
+
+# Merge Dataframes and Attach
+```{r}
+california_clean <- rbind(pge_clean, sce_clean, sdge_clean)
+attach(california_clean)
+```
+
+# California Policy Analysis
+## Aggregate by Month
+```{r}
+datetablem <- table(cut(date, 'month'))
+ca_month <- data.frame(Date = format(as.Date(names(datetablem)), '%m/%Y'), Frequency = as.vector(datetablem))
+rm(datetablem)
+names(ca_month)[names(ca_month) == 'Frequency'] <- 'Installations'
+attach(ca_month)
+```
+
+## Create Time and Drop Outliers
+```{r}
+# CreateTime
+ca_month$time <- as.numeric(rownames(ca_month))
+# Drop Outlier Months [January 2002 - December 2019]
+ca_month <- ca_month[which(ca_month$time < 281),]
+ca_month <- ca_month[which(ca_month$time > 64),]
+rownames(ca_month) <- 1:nrow(ca_month)
+# Re-create Time
+ca_month$time <- as.numeric(rownames(ca_month))
+```
+
+### Residential Renewable Energy Tax Credit
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.itc.date <- "01/2006" 
+# Intervention
+ca_month$itc <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.itc.date], 1, 0)
+# Preslope
+ca_month$itc_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.itc.date], ca_month$time[ca_month$`Date` == ca.itc.date], ca_month$time)
+# Postslope
+ca_month$itc_postslope <- cumsum(ca_month$itc)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.itc = lm(Installations ~ time + itc + itc_postslope, data = ca_month)
+summary(lm.ca.itc)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.itc)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.itc.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.itc <- prais_winsten(Installations ~ time + itc + itc_postslope, data = ca_month)
+summary(pw.ca.itc)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.itc)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.itc.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.itc[["coefficients"]][["itc"]] + (pw.ca.itc[["coefficients"]][["itc_postslope"]] * 13)
+pw.ca.itc[["coefficients"]][["itc"]] + (pw.ca.itc[["coefficients"]][["itc_postslope"]] * 25)
+```
+
+### Residential Renewable Energy Tax Credit v2
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.itc_v2.date <- "01/2009" 
+# Intervention
+ca_month$itc_v2 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.itc_v2.date], 1, 0)
+# Preslope
+ca_month$itc_v2_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.itc_v2.date], ca_month$time[ca_month$`Date` == ca.itc_v2.date], ca_month$time)
+# Postslope
+ca_month$itc_v2_postslope <- cumsum(ca_month$itc_v2)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.itc_v2 = lm(Installations ~ time + itc_v2 + itc_v2_postslope, data = ca_month)
+summary(lm.ca.itc_v2)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.itc_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.itc_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.itc_v2 <- prais_winsten(Installations ~ time + itc_v2 + itc_v2_postslope, data = ca_month)
+summary(pw.ca.itc_v2)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.itc_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.itc_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.itc_v2[["coefficients"]][["itc_v2"]] + (pw.ca.itc_v2[["coefficients"]][["itc_v2_postslope"]] * 13)
+pw.ca.itc_v2[["coefficients"]][["itc_v2"]] + (pw.ca.itc_v2[["coefficients"]][["itc_v2_postslope"]] * 25)
+```
+
+### Interconnection Standards for Small Generators (Order 2006)
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.f_interconnection.date <- "05/2005" 
+# Intervention
+ca_month$f_interconnection <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.f_interconnection.date], 1, 0)
+# Preslope
+ca_month$f_interconnection_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.f_interconnection.date], ca_month$time[ca_month$`Date` == ca.f_interconnection.date], ca_month$time)
+# Postslope
+ca_month$f_interconnection_postslope <- cumsum(ca_month$f_interconnection)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.f_interconnection = lm(Installations ~ time + f_interconnection + f_interconnection_postslope, data = ca_month)
+summary(lm.ca.f_interconnection)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.f_interconnection)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.f_interconnection <- prais_winsten(Installations ~ time + f_interconnection + f_interconnection_postslope, data = ca_month)
+summary(pw.ca.f_interconnection)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.f_interconnection)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.f_interconnection[["coefficients"]][["f_interconnection"]] + (pw.ca.f_interconnection[["coefficients"]][["f_interconnection_postslope"]] * 13)
+pw.ca.f_interconnection[["coefficients"]][["f_interconnection"]] + (pw.ca.f_interconnection[["coefficients"]][["f_interconnection_postslope"]] * 25)
+```
+
+### Interconnection Standards for Small Generators (Order 792)
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.f_interconnection_v2.date <- "11/2013" 
+# Intervention
+ca_month$f_interconnection_v2 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.f_interconnection_v2.date], 1, 0)
+# Preslope
+ca_month$f_interconnection_v2_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.f_interconnection_v2.date], ca_month$time[ca_month$`Date` == ca.f_interconnection_v2.date], ca_month$time)
+# Postslope
+ca_month$f_interconnection_v2_postslope <- cumsum(ca_month$f_interconnection_v2)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.f_interconnection_v2 = lm(Installations ~ time + f_interconnection_v2 + f_interconnection_v2_postslope, data = ca_month)
+summary(lm.ca.f_interconnection_v2)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.f_interconnection_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.f_interconnection_v2 <- prais_winsten(Installations ~ time + f_interconnection_v2 + f_interconnection_v2_postslope, data = ca_month)
+summary(pw.ca.f_interconnection_v2)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.f_interconnection_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.f_interconnection_v2[["coefficients"]][["f_interconnection_v2"]] + (pw.ca.f_interconnection_v2[["coefficients"]][["f_interconnection_v2_postslope"]] * 13)
+pw.ca.f_interconnection_v2[["coefficients"]][["f_interconnection_v2"]] + (pw.ca.f_interconnection_v2[["coefficients"]][["f_interconnection_v2_postslope"]] * 25)
+```
+
+### Interconnection Standards for Small Generators (Order 828)
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.f_interconnection_v3.date <- "07/2016" 
+# Intervention
+ca_month$f_interconnection_v3 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.f_interconnection_v3.date], 1, 0)
+# Preslope
+ca_month$f_interconnection_v3_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.f_interconnection_v3.date], ca_month$time[ca_month$`Date` == ca.f_interconnection_v3.date], ca_month$time)
+# Postslope
+ca_month$f_interconnection_v3_postslope <- cumsum(ca_month$f_interconnection_v3)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.f_interconnection_v3 = lm(Installations ~ time + f_interconnection_v3 + f_interconnection_v3_postslope, data = ca_month)
+summary(lm.ca.f_interconnection_v3)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.f_interconnection_v3)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection_v3.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.f_interconnection_v3 <- prais_winsten(Installations ~ time + f_interconnection_v3 + f_interconnection_v3_postslope, data = ca_month)
+summary(pw.ca.f_interconnection_v3)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.f_interconnection_v3)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection_v3.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.f_interconnection_v3[["coefficients"]][["f_interconnection_v3"]] + (pw.ca.f_interconnection_v3[["coefficients"]][["f_interconnection_v3_postslope"]] * 13)
+pw.ca.f_interconnection_v3[["coefficients"]][["f_interconnection_v3"]] + (pw.ca.f_interconnection_v3[["coefficients"]][["f_interconnection_v3_postslope"]] * 25)
+```
+
+### FHA PowerSaver Loan Program
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.fha_powersaver.date <- "01/2015" 
+# Intervention
+ca_month$fha_powersaver <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.fha_powersaver.date], 1, 0)
+# Preslope
+ca_month$fha_powersaver_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.fha_powersaver.date], ca_month$time[ca_month$`Date` == ca.fha_powersaver.date], ca_month$time)
+# Postslope
+ca_month$fha_powersaver_postslope <- cumsum(ca_month$fha_powersaver)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.fha_powersaver = lm(Installations ~ time + fha_powersaver + fha_powersaver_postslope, data = ca_month)
+summary(lm.ca.fha_powersaver)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.fha_powersaver)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.fha_powersaver.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.fha_powersaver <- prais_winsten(Installations ~ time + fha_powersaver + fha_powersaver_postslope, data = ca_month)
+summary(pw.ca.fha_powersaver)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.fha_powersaver)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.fha_powersaver.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.fha_powersaver[["coefficients"]][["fha_powersaver"]] + (pw.ca.fha_powersaver[["coefficients"]][["fha_powersaver_postslope"]] * 13)
+pw.ca.fha_powersaver[["coefficients"]][["fha_powersaver"]] + (pw.ca.fha_powersaver[["coefficients"]][["fha_powersaver_postslope"]] * 25)
+```
+
+### Property Tax Exclusion for Solar Energy Systems
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.property_tax_exemption.date <- "06/2011" 
+# Intervention
+ca_month$property_tax_exemption <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.property_tax_exemption.date], 1, 0)
+# Preslope
+ca_month$property_tax_exemption_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.property_tax_exemption.date], ca_month$time[ca_month$`Date` == ca.property_tax_exemption.date], ca_month$time)
+# Postslope
+ca_month$property_tax_exemption_postslope <- cumsum(ca_month$property_tax_exemption)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.property_tax_exemption = lm(Installations ~ time + property_tax_exemption + property_tax_exemption_postslope, data = ca_month)
+summary(lm.ca.property_tax_exemption)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.property_tax_exemption)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.property_tax_exemption.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.property_tax_exemption <- prais_winsten(Installations ~ time + property_tax_exemption + property_tax_exemption_postslope, data = ca_month)
+summary(pw.ca.property_tax_exemption)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.property_tax_exemption)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.property_tax_exemption.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.property_tax_exemption[["coefficients"]][["property_tax_exemption"]] + (pw.ca.property_tax_exemption[["coefficients"]][["property_tax_exemption_postslope"]] * 13)
+pw.ca.property_tax_exemption[["coefficients"]][["property_tax_exemption"]] + (pw.ca.property_tax_exemption[["coefficients"]][["property_tax_exemption_postslope"]] * 25)
+```
+
+### Homebuyer Solar Option and Solar Offset Program
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.solar_option.date <- "08/2006" 
+# Intervention
+ca_month$solar_option <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.solar_option.date], 1, 0)
+# Preslope
+ca_month$solar_option_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.solar_option.date], ca_month$time[ca_month$`Date` == ca.solar_option.date], ca_month$time)
+# Postslope
+ca_month$solar_option_postslope <- cumsum(ca_month$solar_option)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.solar_option = lm(Installations ~ time + solar_option + solar_option_postslope, data = ca_month)
+summary(lm.ca.solar_option)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.solar_option)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_option.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.solar_option <- prais_winsten(Installations ~ time + solar_option + solar_option_postslope, data = ca_month)
+summary(pw.ca.solar_option)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.solar_option)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_option.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.solar_option[["coefficients"]][["solar_option"]] + (pw.ca.solar_option[["coefficients"]][["solar_option_postslope"]] * 13)
+pw.ca.solar_option[["coefficients"]][["solar_option"]] + (pw.ca.solar_option[["coefficients"]][["solar_option_postslope"]] * 25)
+```
+
+### Building Energy Code and Solar Requirement
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.building_code.date <- "07/2008" 
+# Intervention
+ca_month$building_code <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.building_code.date], 1, 0)
+# Preslope
+ca_month$building_code_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.building_code.date], ca_month$time[ca_month$`Date` == ca.building_code.date], ca_month$time)
+# Postslope
+ca_month$building_code_postslope <- cumsum(ca_month$building_code)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.building_code = lm(Installations ~ time + building_code + building_code_postslope, data = ca_month)
+summary(lm.ca.building_code)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.building_code)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.building_code.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.building_code <- prais_winsten(Installations ~ time + building_code + building_code_postslope, data = ca_month)
+summary(pw.ca.building_code)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.building_code)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.building_code.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.building_code[["coefficients"]][["building_code"]] + (pw.ca.building_code[["coefficients"]][["building_code_postslope"]] * 13)
+pw.ca.building_code[["coefficients"]][["building_code"]] + (pw.ca.building_code[["coefficients"]][["building_code_postslope"]] * 25)
+```
+
+### Solar Shade Control Act
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.shade_act.date <- "01/2009" 
+# Intervention
+ca_month$shade_act <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.shade_act.date], 1, 0)
+# Preslope
+ca_month$shade_act_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.shade_act.date], ca_month$time[ca_month$`Date` == ca.shade_act.date], ca_month$time)
+# Postslope
+ca_month$shade_act_postslope <- cumsum(ca_month$shade_act)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.shade_act = lm(Installations ~ time + shade_act + shade_act_postslope, data = ca_month)
+summary(lm.ca.shade_act)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.shade_act)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.shade_act.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.shade_act <- prais_winsten(Installations ~ time + shade_act + shade_act_postslope, data = ca_month)
+summary(pw.ca.shade_act)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.shade_act)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.shade_act.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.shade_act[["coefficients"]][["shade_act"]] + (pw.ca.shade_act[["coefficients"]][["shade_act_postslope"]] * 13)
+pw.ca.shade_act[["coefficients"]][["shade_act"]] + (pw.ca.shade_act[["coefficients"]][["shade_act_postslope"]] * 25)
+```
+
+### Solar Rights Act
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.solar_rights.date <- "01/2005" 
+# Intervention
+ca_month$solar_rights <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.solar_rights.date], 1, 0)
+# Preslope
+ca_month$solar_rights_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.solar_rights.date], ca_month$time[ca_month$`Date` == ca.solar_rights.date], ca_month$time)
+# Postslope
+ca_month$solar_rights_postslope <- cumsum(ca_month$solar_rights)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.solar_rights = lm(Installations ~ time + solar_rights + solar_rights_postslope, data = ca_month)
+summary(lm.ca.solar_rights)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.solar_rights)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_rights.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.solar_rights <- prais_winsten(Installations ~ time + solar_rights + solar_rights_postslope, data = ca_month)
+summary(pw.ca.solar_rights)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.solar_rights)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_rights.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.solar_rights[["coefficients"]][["solar_rights"]] + (pw.ca.solar_rights[["coefficients"]][["solar_rights_postslope"]] * 13)
+pw.ca.solar_rights[["coefficients"]][["solar_rights"]] + (pw.ca.solar_rights[["coefficients"]][["solar_rights_postslope"]] * 25)
+```
+
+### Solar Rights Act v2
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.solar_rights_v2.date <- "10/2017" 
+# Intervention
+ca_month$solar_rights_v2 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.solar_rights_v2.date], 1, 0)
+# Preslope
+ca_month$solar_rights_v2_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.solar_rights_v2.date], ca_month$time[ca_month$`Date` == ca.solar_rights_v2.date], ca_month$time)
+# Postslope
+ca_month$solar_rights_v2_postslope <- cumsum(ca_month$solar_rights_v2)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.solar_rights_v2 = lm(Installations ~ time + solar_rights_v2 + solar_rights_v2_postslope, data = ca_month)
+summary(lm.ca.solar_rights_v2)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.solar_rights_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_rights_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.solar_rights_v2 <- prais_winsten(Installations ~ time + solar_rights_v2 + solar_rights_v2_postslope, data = ca_month)
+summary(pw.ca.solar_rights_v2)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.solar_rights_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_rights_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.solar_rights_v2[["coefficients"]][["solar_rights_v2"]] + (pw.ca.solar_rights_v2[["coefficients"]][["solar_rights_v2_postslope"]] * 13)
+pw.ca.solar_rights_v2[["coefficients"]][["solar_rights_v2"]] + (pw.ca.solar_rights_v2[["coefficients"]][["solar_rights_v2_postslope"]] * 25)
+```
+
+### Single-Family Affordable Solar Housing (SASH) Program
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.sash.date <- "07/2009" 
+# Intervention
+ca_month$sash <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.sash.date], 1, 0)
+# Preslope
+ca_month$sash_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.sash.date], ca_month$time[ca_month$`Date` == ca.sash.date], ca_month$time)
+# Postslope
+ca_month$sash_postslope <- cumsum(ca_month$sash)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.sash = lm(Installations ~ time + sash + sash_postslope, data = ca_month)
+summary(lm.ca.sash)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.sash)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.sash.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.sash <- prais_winsten(Installations ~ time + sash + sash_postslope, data = ca_month)
+summary(pw.ca.sash)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.sash)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.sash.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.sash[["coefficients"]][["sash"]] + (pw.ca.sash[["coefficients"]][["sash_postslope"]] * 13)
+pw.ca.sash[["coefficients"]][["sash"]] + (pw.ca.sash[["coefficients"]][["sash_postslope"]] * 25)
+```
+
+### Renewable Market Adjusting Tariff (ReMAT)
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.remat.date <- "02/2008" 
+# Intervention
+ca_month$remat <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.remat.date], 1, 0)
+# Preslope
+ca_month$remat_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.remat.date], ca_month$time[ca_month$`Date` == ca.remat.date], ca_month$time)
+# Postslope
+ca_month$remat_postslope <- cumsum(ca_month$remat)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.remat = lm(Installations ~ time + remat + remat_postslope, data = ca_month)
+summary(lm.ca.remat)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.remat)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.remat.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.remat <- prais_winsten(Installations ~ time + remat + remat_postslope, data = ca_month)
+summary(pw.ca.remat)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.remat)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.remat.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.remat[["coefficients"]][["remat"]] + (pw.ca.remat[["coefficients"]][["remat_postslope"]] * 13)
+pw.ca.remat[["coefficients"]][["remat"]] + (pw.ca.remat[["coefficients"]][["remat_postslope"]] * 25)
+```
+
+### Net Metering v2
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.net_metering_v2.date <- "09/2008" 
+# Intervention
+ca_month$net_metering_v2 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.net_metering_v2.date], 1, 0)
+# Preslope
+ca_month$net_metering_v2_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.net_metering_v2.date], ca_month$time[ca_month$`Date` == ca.net_metering_v2.date], ca_month$time)
+# Postslope
+ca_month$net_metering_v2_postslope <- cumsum(ca_month$net_metering_v2)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.net_metering_v2 = lm(Installations ~ time + net_metering_v2 + net_metering_v2_postslope, data = ca_month)
+summary(lm.ca.net_metering_v2)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.net_metering_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.net_metering_v2 <- prais_winsten(Installations ~ time + net_metering_v2 + net_metering_v2_postslope, data = ca_month)
+summary(pw.ca.net_metering_v2)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.net_metering_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.net_metering_v2[["coefficients"]][["net_metering_v2"]] + (pw.ca.net_metering_v2[["coefficients"]][["net_metering_v2_postslope"]] * 13)
+pw.ca.net_metering_v2[["coefficients"]][["net_metering_v2"]] + (pw.ca.net_metering_v2[["coefficients"]][["net_metering_v2_postslope"]] * 25)
+```
+
+### Net Metering v3
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.net_metering_v3.date <- "09/2012" 
+# Intervention
+ca_month$net_metering_v3 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.net_metering_v3.date], 1, 0)
+# Preslope
+ca_month$net_metering_v3_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.net_metering_v3.date], ca_month$time[ca_month$`Date` == ca.net_metering_v3.date], ca_month$time)
+# Postslope
+ca_month$net_metering_v3_postslope <- cumsum(ca_month$net_metering_v3)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.net_metering_v3 = lm(Installations ~ time + net_metering_v3 + net_metering_v3_postslope, data = ca_month)
+summary(lm.ca.net_metering_v3)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.net_metering_v3)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v3.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.net_metering_v3 <- prais_winsten(Installations ~ time + net_metering_v3 + net_metering_v3_postslope, data = ca_month)
+summary(pw.ca.net_metering_v3)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.net_metering_v3)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v3.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.net_metering_v3[["coefficients"]][["net_metering_v3"]] + (pw.ca.net_metering_v3[["coefficients"]][["net_metering_v3_postslope"]] * 13)
+pw.ca.net_metering_v3[["coefficients"]][["net_metering_v3"]] + (pw.ca.net_metering_v3[["coefficients"]][["net_metering_v3_postslope"]] * 25)
+```
+
+### Net Metering v4
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.net_metering_v4.date <- "07/2017" 
+# Intervention
+ca_month$net_metering_v4 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.net_metering_v4.date], 1, 0)
+# Preslope
+ca_month$net_metering_v4_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.net_metering_v4.date], ca_month$time[ca_month$`Date` == ca.net_metering_v4.date], ca_month$time)
+# Postslope
+ca_month$net_metering_v4_postslope <- cumsum(ca_month$net_metering_v4)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.net_metering_v4 = lm(Installations ~ time + net_metering_v4 + net_metering_v4_postslope, data = ca_month)
+summary(lm.ca.net_metering_v4)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.net_metering_v4)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v4.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.net_metering_v4 <- prais_winsten(Installations ~ time + net_metering_v4 + net_metering_v4_postslope, data = ca_month)
+summary(pw.ca.net_metering_v4)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.net_metering_v4)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v4.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.net_metering_v4[["coefficients"]][["net_metering_v4"]] + (pw.ca.net_metering_v4[["coefficients"]][["net_metering_v4_postslope"]] * 13)
+pw.ca.net_metering_v4[["coefficients"]][["net_metering_v4"]] + (pw.ca.net_metering_v4[["coefficients"]][["net_metering_v4_postslope"]] * 25)
+```
+
+### Statewide Solar Permitting Standards
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.permit_standards.date <- "09/2012" 
+# Intervention
+ca_month$permit_standards <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.permit_standards.date], 1, 0)
+# Preslope
+ca_month$permit_standards_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.permit_standards.date], ca_month$time[ca_month$`Date` == ca.permit_standards.date], ca_month$time)
+# Postslope
+ca_month$permit_standards_postslope <- cumsum(ca_month$permit_standards)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.permit_standards = lm(Installations ~ time + permit_standards + permit_standards_postslope, data = ca_month)
+summary(lm.ca.permit_standards)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.permit_standards)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.permit_standards.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.permit_standards <- prais_winsten(Installations ~ time + permit_standards + permit_standards_postslope, data = ca_month)
+summary(pw.ca.permit_standards)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.permit_standards)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.permit_standards.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.permit_standards[["coefficients"]][["permit_standards"]] + (pw.ca.permit_standards[["coefficients"]][["permit_standards_postslope"]] * 13)
+pw.ca.permit_standards[["coefficients"]][["permit_standards"]] + (pw.ca.permit_standards[["coefficients"]][["permit_standards_postslope"]] * 25)
+```
+
+### Statewide Solar Permitting Standards v2
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.permit_standards_v2.date <- "09/2014" 
+# Intervention
+ca_month$permit_standards_v2 <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.permit_standards_v2.date], 1, 0)
+# Preslope
+ca_month$permit_standards_v2_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.permit_standards_v2.date], ca_month$time[ca_month$`Date` == ca.permit_standards_v2.date], ca_month$time)
+# Postslope
+ca_month$permit_standards_v2_postslope <- cumsum(ca_month$permit_standards_v2)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.permit_standards_v2 = lm(Installations ~ time + permit_standards_v2 + permit_standards_v2_postslope, data = ca_month)
+summary(lm.ca.permit_standards_v2)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.permit_standards_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.permit_standards_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.permit_standards_v2 <- prais_winsten(Installations ~ time + permit_standards_v2 + permit_standards_v2_postslope, data = ca_month)
+summary(pw.ca.permit_standards_v2)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.permit_standards_v2)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.permit_standards_v2.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.permit_standards_v2[["coefficients"]][["permit_standards_v2"]] + (pw.ca.permit_standards_v2[["coefficients"]][["permit_standards_v2_postslope"]] * 13)
+pw.ca.permit_standards_v2[["coefficients"]][["permit_standards_v2"]] + (pw.ca.permit_standards_v2[["coefficients"]][["permit_standards_v2_postslope"]] * 25)
+```
+
+### Interconnection Standards
+#### Create Intervention, Preslope, and Postslope Variables
+```{r}
+# Save the Date of the Policy
+ca.ca_interconnection.date <- "09/2012" 
+# Intervention
+ca_month$ca_interconnection <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.ca_interconnection.date], 1, 0)
+# Preslope
+ca_month$ca_interconnection_preslope <- ifelse(ca_month$time >= ca_month$time[ca_month$`Date` == ca.ca_interconnection.date], ca_month$time[ca_month$`Date` == ca.ca_interconnection.date], ca_month$time)
+# Postslope
+ca_month$ca_interconnection_postslope <- cumsum(ca_month$ca_interconnection)
+```
+
+#### Build a Segmented Regression
+```{r}
+lm.ca.ca_interconnection = lm(Installations ~ time + ca_interconnection + ca_interconnection_postslope, data = ca_month)
+summary(lm.ca.ca_interconnection)
+```
+
+##### Plot Linear Regression
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(lm.ca.ca_interconnection)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.ca_interconnection.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Prais–Winsten Method for Independence
+```{r}
+pw.ca.ca_interconnection <- prais_winsten(Installations ~ time + ca_interconnection + ca_interconnection_postslope, data = ca_month)
+summary(pw.ca.ca_interconnection)
+```
+
+##### Plot Prais–Winsten Method
+```{r}
+ggplot(ca_month) + 
+  geom_line(aes(x = time, y = fitted(pw.ca.ca_interconnection)), color = "#275695", size = 0.75) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.ca_interconnection.date], linetype = "dashed", color = "#E8453C", size = 1) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+
+#### Calculate Average Number of Installation Change After 1 Year and 2 Years
+```{r}
+pw.ca.ca_interconnection[["coefficients"]][["ca_interconnection"]] + (pw.ca.ca_interconnection[["coefficients"]][["ca_interconnection_postslope"]] * 13)
+pw.ca.ca_interconnection[["coefficients"]][["ca_interconnection"]] + (pw.ca.ca_interconnection[["coefficients"]][["ca_interconnection_postslope"]] * 25)
+```
+
+### California Plot All Policies with Installation Over Time
+```{r}
+ggplot(data = ca_month, aes(time, Installations)) + 
+  geom_point(aes(x = time, y = Installations), color = "black", alpha = 0.25, size = .75) +
+  xlab("Time") + ylab("Solar Installations") +
+  scale_x_continuous(breaks = c(0, 50, 100, 150, 200), labels = c("2002", "2006", "2010", "2014", "2018")) + 
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm")) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.itc.date], linetype = "solid", color = "#E8453C", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.itc_v2.date], linetype = "solid", color = "#E8453C", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection.date], linetype = "dashed", color = "#E8453C", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection_v2.date], linetype = "dashed", color = "#E8453C", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.f_interconnection_v3.date], linetype = "dashed", color = "#E8453C", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.fha_powersaver.date], linetype = "solid", color = "#E8453C", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.property_tax_exemption.date], linetype = "solid", color = "#275695", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_option.date], linetype = "dashed", color = "#275695", size = .5) + 
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.building_code.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.shade_act.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_rights.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.solar_rights_v2.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.sash.date], linetype = "solid", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.remat.date], linetype = "solid", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v2.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v3.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.net_metering_v4.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.permit_standards.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.permit_standards_v2.date], linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = ca_month$time[ca_month$`Date` == ca.ca_interconnection.date], linetype = "dashed", color = "#275695", size = .5)
+ggsave("California_Policies.jpg", path = "Policy Analysis", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```

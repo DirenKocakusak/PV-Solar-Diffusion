@@ -1,0 +1,459 @@
+---
+title: "Descriptive Statistics and Analyzing the S Curve"
+author: "Diren Kocakusak"
+date: "9/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading Libraries
+```{r}
+library(ggplot2)
+library(readxl)
+library(readr)
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+library(MASS)
+library(zoo)
+library(NbClust)
+library(segmented)
+```
+
+# Importing and Attaching the Data (from previous file)
+```{r}
+tts_clean <- read_csv("tts_clean.csv", col_types = cols(zipcode = col_character()))
+attach(tts_clean)
+```
+
+# Descriptive Statistics
+## Count Table by States
+```{r}
+count(tts_clean, State)
+```
+
+## Number of Installations and Installed Capacity per Year
+```{r}
+tts_clean$year <- tts_clean$`Installation Date`
+tts_clean$year <- format(tts_clean$year,'%Y')
+tts_installations_year <- aggregate(`Installation Date` ~ year, tts_clean, FUN = length)
+tts_capacity_year <- aggregate(`System Size` ~ year, tts_clean, FUN = sum)
+tts_capacity_per_year <- merge(tts_installations_year, tts_capacity_year, by.x = 'year', by.y = 'year')
+rm(tts_installations_year)
+rm(tts_capacity_year)
+write.csv(tts_capacity_per_year, file = "tts_capacity_per_year.csv")
+```
+
+## Installations per Month/Year
+```{r}
+datetablem <- table(cut(`Installation Date`, 'month'))
+installationspermonth <- data.frame(Date=format(as.Date(names(datetablem)), '%m/%Y'), Frequency=as.vector(datetablem))
+write.csv(installationspermonth, file = "tts_installationspermonth.csv")
+```
+
+## Average Cost
+```{r}
+mean(`Total Installed Price`)
+```
+
+## Average Cost Over Time
+```{r}
+tts_clean$year <- tts_clean$`Installation Date`
+tts_clean$year <- format(tts_clean$year,'%Y')
+tts_capacity_year <- aggregate(`System Size` ~ year, tts_clean, FUN = sum)
+tts_cost_year <- aggregate(`Total Installed Price` ~ year, tts_clean, FUN = sum)
+tts_cost_per_year <- merge(tts_capacity_year, tts_cost_year, by.x = 'year', by.y = 'year')
+rm(tts_capacity_year)
+rm(tts_cost_year)
+write.csv(tts_cost_per_year, file = "tts_cost_per_year.csv")
+```
+
+## Average System Size
+```{r}
+mean(`System Size`)
+```
+
+## Average Size Over Time
+```{r}
+tts_clean$year <- tts_clean$`Installation Date`
+tts_clean$year <- format(tts_clean$year,'%Y')
+tts_installations_year <- aggregate(`Installation Date` ~ year, tts_clean, FUN = length)
+tts_capacity_year <- aggregate(`System Size` ~ year, tts_clean, FUN = sum)
+tts_average_size_per_year <- merge(tts_installations_year, tts_capacity_year, by.x = 'year', by.y = 'year')
+rm(tts_installations_year)
+rm(tts_capacity_year)
+write.csv(tts_average_size_per_year, file = "tts_average_size_per_year.csv")
+```
+
+### Draw Box Plot
+```{r}
+tts_quantile_size_per_year <- tts_clean %>% 
+  group_by(year) %>%  
+  summarise(quantile = scales::percent(c(0.25, 0.5, 0.75)),
+            `System Size` = quantile(`System Size`, c(0.25, 0.5, 0.75)))
+write.csv(tts_quantile_size_per_year, file = "tts_quantile_size_per_year.csv")
+```
+
+# Aggregating Based on States
+## Averaging for Size, Cost, Cost per Watt, and Counting for the Number of Installations
+```{r}
+tts_states_size <- aggregate(`System Size` ~ `State`, tts_clean, FUN = mean)
+tts_states_cost <- aggregate(`Total Installed Price` ~ `State`, tts_clean, FUN = mean)
+tts_installations <- aggregate(`Installation Date` ~ `State`, tts_clean, FUN = length)
+tts_states <- merge(tts_states_size, tts_states_cost, by.x='State', by.y='State')
+tts_states <- merge(tts_states, tts_installations, by.x='State', by.y='State')
+names(tts_states)[names(tts_states) == 'Installation Date'] <- 'installations'
+```
+
+## Bring the Number of Units From the U.S. Census (B25032 - Tenure by Units in Structure (ACS 2018) by States) and Merge
+```{r}
+buildings_states <- read_csv("Owner-occupied residential structures that have one unit.csv")
+tts_states <- merge(tts_states, buildings_states, by.x='State', by.y='Stateabb')
+tts_states <- subset(tts_states, select = -c(id, State, Single_unit_Detached, Single_unit_Attached))
+names(tts_states)[names(tts_states) == 'Total'] <- 'total_houses'
+```
+
+## Calculate the Adoption Rate
+```{r}
+tts_states$adoption_rate = tts_states$installations / tts_states$total_houses
+```
+
+## Export Aggregated States Data to CSV file
+```{r}
+write.csv(tts_states, file = "tts_states.csv")
+```
+
+# Subsetting a State for the Plot
+## Subset New Jersey
+```{r}
+newjersey <- tts_clean[which(tts_clean$`State` == 'NJ'),]
+```
+
+### Create The Cumulative Installation Numbers Field and Calculate the Installation Rate
+```{r}
+newjersey <- newjersey[7]
+newjersey$total_houses <- tts_states[which(tts_states$`State` == 'New Jersey'), "total_houses"] 
+newjersey$installation_counter <- 1
+newjersey <- newjersey[order(as.Date(newjersey$`Installation Date`, format="%Y/%m/%d")),]
+newjersey$cumulative_installations <- cumsum(newjersey$installation_counter)
+newjersey$installation_rate <- newjersey$cumulative_installations / newjersey$total_houses
+```
+
+### Plot the Installation Rate by Date
+```{r, message = FALSE}
+ggplot(data = newjersey, aes(`Installation Date`, installation_rate)) + 
+  geom_line(color = "#4674c1", size = 1) +
+  ggtitle("Installation Rate Over Time in New Jersey") +
+  xlab("Date") + ylab("Installation Rate") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1, scale = 100), breaks = seq(0, 1, by = 0.02)) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 14, face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.minor = element_line(color = "#eeeeee", linetype = "dashed", size = .5)) +
+  geom_vline(xintercept = as.numeric(as.Date("2005-08-08")), linetype = "dashed", color = "#be0712", size = .5) +
+  geom_text(aes(x = as.Date("2005-08-08"), y = .002, label = "Energy Policy Act of 2005"), color="#be0712", angle = 90, vjust = -.5, size = 3)
+ggsave("NewJersey.jpg", path = "Output/Installation Rate Over Time/States", dpi = 300)
+```
+
+# Aggregating Based on ZIP Code Areas
+## Calculating Averages for Size, Cost, Cost per Watt, and Counting for the Number of Installations
+```{r}
+tts_zipcodes_size <- aggregate(`System Size` ~ zipcode, tts_clean, FUN = mean)
+tts_zipcodes_cost <- aggregate(`Total Installed Price` ~ zipcode, tts_clean, FUN = mean)
+tts_zipcodes_installations <- aggregate(`Installation Date` ~ zipcode, tts_clean, FUN = length)
+tts_zipcodes_state <- tts_clean %>% group_by(zipcode, `State`) %>% summarise()
+tts_zipcodes_state$zipcode[duplicated(tts_zipcodes_state$zipcode)]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "01760" & tts_zipcodes_state$`State` != "MA"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "06111" & tts_zipcodes_state$`State` != "CT"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "07079" & tts_zipcodes_state$`State` != "NJ"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "08204" & tts_zipcodes_state$`State` != "NJ"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "11960" & tts_zipcodes_state$`State` != "NY"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "12303" & tts_zipcodes_state$`State` != "NY"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "14174" & tts_zipcodes_state$`State` != "NY"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "17815" & tts_zipcodes_state$`State` != "PA"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "19067" & tts_zipcodes_state$`State` != "PA"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "19809" & tts_zipcodes_state$`State` != "DE"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "33041" & tts_zipcodes_state$`State` != "FL"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "53575" & tts_zipcodes_state$`State` != "WI"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "75154" & tts_zipcodes_state$`State` != "TX"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "78758" & tts_zipcodes_state$`State` != "TX"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "79835" & tts_zipcodes_state$`State` != "TX"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "88012" & tts_zipcodes_state$`State` != "NM"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "92131" & tts_zipcodes_state$`State` != "CA"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "95340" & tts_zipcodes_state$`State` != "CA"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "96001" & tts_zipcodes_state$`State` != "CA"),]
+tts_zipcodes_state <- tts_zipcodes_state[!(tts_zipcodes_state$zipcode == "97037" & tts_zipcodes_state$`State` != "OR"),]
+tts_zipcodes <- merge(tts_zipcodes_size, tts_zipcodes_cost, by.x='zipcode', by.y='zipcode')
+tts_zipcodes <- merge(tts_zipcodes, tts_zipcodes_installations, by.x='zipcode', by.y='zipcode')
+tts_zipcodes <- merge(tts_zipcodes, tts_zipcodes_state, by.x='zipcode', by.y='zipcode')
+names(tts_zipcodes)[names(tts_zipcodes) == 'Installation Date'] <- 'installations'
+rm(tts_zipcodes_cost)
+rm(tts_zipcodes_installations)
+rm(tts_zipcodes_size)
+```
+
+## Bring the Number of Units From the U.S. Census (B25032 - Tenure by Units in Structure (ACS 2018) by ZCTAs) and Merge
+```{r}
+buildings_zipcodes <- read_excel("Owner-occupied residential structures that have one unit.xlsx")
+tts_zipcodes <- merge(tts_zipcodes, buildings_zipcodes, by.x='zipcode', by.y='zipcode')
+tts_zipcodes <- subset(tts_zipcodes, select = -c(Single_unit_detached, Single_unit_attached))
+names(tts_zipcodes)[names(tts_zipcodes) == 'Total'] <- 'total_houses'
+rm(buildings_zipcodes)
+```
+
+## Calculate the Adoption Rate
+```{r}
+tts_zipcodes$adoption_rate = tts_zipcodes$installations / tts_zipcodes$total_houses
+```
+
+## Remove ZIP Code Areas that have adoption rate above 1
+```{r}
+tts_zipcodes <- tts_zipcodes[!(tts_zipcodes$adoption_rate >= 1),]
+```
+
+## Export to CSV file
+```{r}
+write.csv(tts_zipcodes, file = "tts_zipcodes.csv")
+```
+
+# Normality Tests on Adoption Rate
+```{r}
+ggdensity(tts_zipcodes$adoption_rate)
+ggqqplot(tts_zipcodes$adoption_rate)
+hist(tts_zipcodes$adoption_rate)
+ad.test(tts_zipcodes$adoption_rate)
+ks.test(tts_zipcodes$adoption_rate, pnorm)
+ggplot(data = tts_zipcodes, aes(adoption_rate)) +
+  xlab("Adoption Rate") + ylab("Frequency") +
+  geom_histogram(aes(adoption_rate), binwidth = .1, center = 0.05, fill = "#275695") +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 10, scale = 100), breaks = seq(0, 1, by = 0.1)) +
+  scale_y_continuous(limits= c(0, 8000), breaks = seq(0, 8000, by = 1000)) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+ggsave("Adoption Rate Histogram.jpg", path = "Descriptive Statistics", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+# Normality Tests on Adoption Rate (Logarithmic Transform)
+```{r}
+ggdensity(log(tts_zipcodes$adoption_rate), 
+          main = "Density plot of tooth length",
+          xlab = "Tooth length")
+ggqqplot(log(tts_zipcodes$adoption_rate))
+hist(log(tts_zipcodes$adoption_rate))
+ad.test(log(tts_zipcodes$adoption_rate))
+ks.test(log(tts_zipcodes$adoption_rate), pnorm)
+```
+
+# BoxCox
+```{r}
+adoption <- tts_zipcodes$adoption_rate
+boxcox(adoption ~ 1)
+```
+
+# Subsetting a Zip Code Area for the Plot
+## Subset Zip Code = 93314 - Bakersfield (Example)
+```{r}
+bakersfield <- tts_clean[which(tts_clean$zipcode == '93314'),]
+```
+
+### Create The Cumulative Installation Numbers Field and Calculate the Installation Rate
+```{r}
+bakersfield <- bakersfield[7]
+bakersfield$total_houses <- tts_zipcodes[which(tts_zipcodes$zipcode == '93314'), "total_houses"] 
+bakersfield$installation_counter <- 1
+bakersfield <- bakersfield[order(as.Date(bakersfield$`Installation Date`, format="%Y/%m/%d")),]
+bakersfield$cumulative_installations <- cumsum(bakersfield$installation_counter)
+bakersfield$installation_rate <- bakersfield$cumulative_installations / bakersfield$total_houses
+```
+
+### Plot the Installation Rate by Date
+```{r, message = FALSE}
+ggplot(data = bakersfield, aes(`Installation Date`, installation_rate)) + 
+  geom_line(color = "black", alpha = 0.75, size = .75) +
+  xlab("Date") + ylab("Installation Rate") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1, scale = 100), breaks = seq(0, 1, by = 0.05)) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm")) +
+  geom_vline(xintercept = as.numeric(as.Date("2005-08-08")), linetype = "solid", color = "#e8453c", size = .5) +
+  geom_text(aes(x = as.Date("2005-08-08"), y = .275, label = "Energy Policy Act of 2005"), color="#e8453c", angle = 90, vjust = -.5, size = 3) +
+  geom_vline(xintercept = as.numeric(as.Date("2012-11-15")), linetype = "dashed", color = "#e8453c", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2011-03-24")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2017-01-01")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2008-07-22")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2005-01-01")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2009-07-01")), linetype = "dashed", color = "#e8453c", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2008-02-14")), linetype = "dashed", color = "#e8453c", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2008-09-28")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2016-03-23")), linetype = "solid", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2012-09-25")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2012-09-13")), linetype = "dashed", color = "#275695", size = .5) +
+  geom_vline(xintercept = as.numeric(as.Date("2011-10-06")), linetype = "dashed", color = "#275695", size = .5)
+ggsave("Bakersfield_CA_93314.jpg", path = "Output/Installation Rate Over Time/ZIP Code Areas", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+# Plot Photovoltaic Solar System Adoption Over Time
+## Subset ZIP Code Areas with more than 500 Installations and 10 Percent adoption rate
+```{r}
+adoption_total <- tts_zipcodes
+adoption_total <- adoption_total[which(adoption_total$installations >= 500),]
+adoption_total <- adoption_total[which(adoption_total$adoption_rate >= .1),]
+adoption_zipcodes <- adoption_total$zipcode
+```
+
+## Create a Loop to combine all the ZIP Code Areas
+```{r}
+zipcode_total <- NULL
+for (i in adoption_zipcodes) {
+  df <- tts_clean[which(tts_clean$zipcode == i), 7]
+  df$total_houses <- adoption_total[which(adoption_total$zipcode == i), "total_houses"] 
+  df$installation_counter <- 1
+  df <- df[order(as.Date(df$`Installation Date`, format="%Y/%m/%d")),]
+  df$cumulative_installations <- cumsum(df$installation_counter)
+  df$installation_rate <- df$cumulative_installations / df$total_houses
+  df <- df %>% mutate(Day = as.numeric(difftime(`Installation Date`, min(`Installation Date`), units = "days")))
+  df <- df[c("Day","installation_rate")]
+  df$Day <- unlist(df$Day)
+  df$installation_rate <- unlist(df$installation_rate)
+  df$zipcode <- print(i)
+  zipcode_total <- rbind(zipcode_total, df)
+}
+zipcode_total <- merge(zipcode_total, tts_zipcodes_state, by.x='zipcode', by.y='zipcode')
+```
+
+## Plot Installations Over Time
+```{r, message = FALSE}
+ggplot() + 
+  annotate("rect", xmin = 0, xmax = max(zipcode_total$Day) + 100, ymin = 0.1, ymax = 0.2, alpha = 0, fill = "#fdbf2d") +
+  geom_line(data = zipcode_total, aes(Day, installation_rate, group = zipcode), color = "#275695", size = 0.5, alpha = 0.25) +
+  xlab("Time Since the First Installation (in years)") + ylab("Installation Rate") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1, scale = 100), breaks = seq(0, 1, by = 0.05)) +
+  scale_x_continuous(breaks = c(365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650, 4015, 4380, 4745, 5110, 5475, 5840, 6205, 6570, 6935, 7300), labels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20")) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), axis.ticks.x = element_line(color = "#D9D9D9"), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+ggsave("PV_Adoption_Over_Time.jpg", path = "Output/Installation Rate Over Time/ZIP Code Areas", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+## Plot installations Over Time and color by State
+### Subset Each State to a Different Dataframe
+```{r}
+count(zipcode_total, State)
+zipcode_az <- zipcode_total[which(zipcode_total$State == "AZ"),]
+zipcode_ca <- zipcode_total[which(zipcode_total$State == "CA"),]
+zipcode_ma <- zipcode_total[which(zipcode_total$State == "MA"),]
+zipcode_nm <- zipcode_total[which(zipcode_total$State == "NM"),]
+```
+
+## Plot Installations Over Time by States
+```{r, message = FALSE}
+ggplot() + 
+    annotate("rect", xmin = 0, xmax = max(zipcode_total$Day) + 100, ymin = 0.1, ymax = 0.2, alpha = .2, fill = "#fdbf2d") +
+  ggtitle("Photovoltaic Solar System Adoption Over Time") +
+  geom_line(data = zipcode_ca, aes(Day, installation_rate, group = zipcode), color = "#f9bb2d", size = 0.5, alpha = 0.4) +
+  geom_line(data = zipcode_az, aes(Day, installation_rate, group = zipcode), color = "#4688f1", size = 0.5, alpha = 0.4) +
+  geom_line(data = zipcode_ma, aes(Day, installation_rate, group = zipcode), color = "#3aa757", size = 0.5, alpha = 0.4) +
+  geom_line(data = zipcode_nm, aes(Day, installation_rate, group = zipcode), color = "#e8453c", size = 0.5, alpha = 0.4) +
+  xlab("Days Since the First Installation") + ylab("Installation Rate") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1, scale = 100), breaks = seq(0, 1, by = 0.05)) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 14, face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.minor = element_line(color = "#eeeeee", linetype = "dashed", size = .5))
+ggsave("PV_Adoption_Over_Time_States.jpg", path = "Output/Installation Rate Over Time/States", dpi = 300)
+```
+
+# When does adoption rate start to "take off"?
+## Moving Average Approach
+### (Loop) Moving Average Approach with Determining Clusters in Data + Keep the earliest data
+```{r}
+adoption_total <- tts_zipcodes
+adoption_total <- adoption_total[which(adoption_total$installations >= 500),]
+adoption_total <- adoption_total[which(adoption_total$adoption_rate >= .1),]
+adoption_zipcodes <- adoption_total$zipcode
+average <- tibble(zipcode = NA, average = NA) # Create the Dataframe for Calculating the Average
+for (i in adoption_zipcodes) {
+zip <- as.character(i)
+zipcode <- tts_clean[which(tts_clean$zipcode == zip),]
+zipcode <- zipcode[7]
+zipcode$total_houses <- tts_zipcodes[which(tts_zipcodes$zipcode == zip), "total_houses"] 
+zipcode$installation_counter <- 1
+zipcode <- zipcode[order(as.Date(zipcode$`Installation Date`, format="%Y/%m/%d")),]
+zipcode$cumulative_installations <- cumsum(zipcode$installation_counter)
+zipcode$installation_rate <- zipcode$cumulative_installations / zipcode$total_houses
+zipcode <- zipcode %>% mutate(Day = as.numeric(difftime(`Installation Date`, min(`Installation Date`), units = "days"))) # Create Days
+nzipcode <- max(zipcode$Day) # Number of Days for the new Dataframe
+nzipcode <- data.frame(1:nzipcode) # Create a new Dataframe with the Number of Days
+names(nzipcode)[names(nzipcode) == 'X1.nzipcode'] <- 'Days'
+nzipcode <- merge(nzipcode, zipcode, by.x = 'Days', by.y = 'Day', all=T) # Merge and keep NAs
+nzipcode <- nzipcode %>% fill(installation_rate, .direction = "down") # Fill NAs
+nzipcode$moving_average <- rollapply(nzipcode$installation_rate, width = 30, align = "left", FUN = mean, na.pad = TRUE) # Calculate moving average for 30 Days
+nzipcode <- nzipcode %>% fill(moving_average, .direction = "up") # Fill NAs
+nzipcode <- nzipcode %>% fill(moving_average, .direction = "down") # Fill NAs
+nzipcode <- nzipcode %>% mutate(difference = moving_average - lag(moving_average, default = moving_average[1])) # Extract moving averages from the next day
+topchange <- nzipcode[order(nzipcode$difference, decreasing=TRUE)[1:(length(zipcode$installation_rate)/20)],,drop=FALSE] # Extract top 10 percent change in differences
+days <- data.frame(topchange$Days) # Extract days for cluster analysis
+clusters <- NbClust(days, diss=NULL, distance = "euclidean", min.nc=1, max.nc=5, method = "ward.D2", index = "kl") # Determine the best clusters automatically
+numberofclusters <- clusters[["Best.nc"]][["Number_clusters"]] # Extract number of clusters
+topchange$clusters <- clusters[["Best.partition"]]
+topchange <- topchange[which(topchange$clusters == topchange$clusters[topchange$Days == min(topchange$Days)]),]
+average <- average %>% add_row(zipcode = zip, average = mean(topchange$installation_rate))
+}
+average <- average[complete.cases(average),]
+mean(average$average)
+```
+
+### Plot Adoption Over Time for ZIP Code Areas with the Average Inflection Point
+```{r}
+ggplot() + 
+  annotate("rect", xmin = 0, xmax = max(zipcode_total$Day) + 100, ymin = 0.1, ymax = 0.2, alpha = .2, fill = "#fdbf2d") +
+  geom_line(data = zipcode_total, aes(Day, installation_rate, group = zipcode), color = "#275695", size = 0.5, alpha = 0.25) +
+  geom_hline(yintercept = mean(average$average), linetype = "dashed", color = "#E8453C", size = .75) +
+  geom_text(aes(x = 750, y = mean(average$average), label = "Taking Off Point: 6.72%", fontface = 2), color="#E8453C", angle = 0, vjust = -.5, size = 5) +
+  xlab("Time Since the First Installation (in years)") + ylab("Installation Rate") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1, scale = 100), breaks = seq(0, 1, by = 0.05)) +
+  scale_x_continuous(breaks = c(365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650, 4015, 4380, 4745, 5110, 5475, 5840, 6205, 6570, 6935, 7300), labels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20")) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+ggsave("PV_Adoption_Over_Time_Method1.jpg", path = "Output/Installation Rate Over Time/ZIP Code Areas", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+## Segmented Regression Approach
+### (Loop) Segmented Regression Model
+```{r}
+adoption_total <- tts_zipcodes
+adoption_total <- adoption_total[which(adoption_total$installations >= 500),]
+adoption_total <- adoption_total[which(adoption_total$adoption_rate >= .1),]
+adoption_zipcodes <- adoption_total$zipcode
+average <- tibble(zipcode = NA, breakpoint = NA) # Create the Dataframe for Calculating the Average
+for (i in adoption_zipcodes) {
+zip <- as.character(i)
+zipcode <- tts_clean[which(tts_clean$zipcode == zip),]
+zipcode <- zipcode[7]
+zipcode$total_houses <- tts_zipcodes[which(tts_zipcodes$zipcode == zip), "total_houses"] 
+zipcode$installation_counter <- 1
+zipcode <- zipcode[order(as.Date(zipcode$`Installation Date`, format="%Y/%m/%d")),]
+zipcode$cumulative_installations <- cumsum(zipcode$installation_counter)
+zipcode$installation_rate <- zipcode$cumulative_installations / zipcode$total_houses
+zipcode <- zipcode %>% mutate(Day = as.numeric(difftime(`Installation Date`, min(`Installation Date`), units = "days"))) # Create Days
+my.lm <- lm(installation_rate ~ Day, data = zipcode) # Fit Linear Model.
+my.seg <- segmented(my.lm, seg.Z = ~ Day, psi = NA, control = seg.control(K = 1)) # Analyze Breakpoints
+breakpoint = (my.seg[["coefficients"]][["Day"]] * my.seg[["psi"]][,2]) + my.seg[["coefficients"]][["(Intercept)"]] # Calculate the Breakpoints
+average <- average %>% add_row(zipcode = zip, breakpoint = breakpoint[1])
+}
+average <- average[complete.cases(average),]
+mean(average$breakpoint)
+```
+
+### Plot Adoption Over Time for ZIP Code Areas with the Average Inflection Point (Segmented Regression Model)
+```{r}
+ggplot() + 
+  annotate("rect", xmin = 0, xmax = max(zipcode_total$Day) + 100, ymin = 0.1, ymax = 0.2, alpha = .2, fill = "#fdbf2d") +
+  geom_line(data = zipcode_total, aes(Day, installation_rate, group = zipcode), color = "#275695", size = 0.5, alpha = 0.25) +
+  geom_hline(yintercept = mean(average$breakpoint), linetype = "dashed", color = "#E8453C", size = .75) +
+  geom_text(aes(x = 750, y = mean(average$breakpoint), label = "Taking Off Point: 3.88%", fontface = 2), color="#E8453C", angle = 0, vjust = -.5, size = 5) +
+  xlab("Time Since the First Installation (in years)") + ylab("Installation Rate") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1, scale = 100), breaks = seq(0, 1, by = 0.05)) +
+  scale_x_continuous(breaks = c(365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650, 4015, 4380, 4745, 5110, 5475, 5840, 6205, 6570, 6935, 7300), labels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20")) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+ggsave("PV_Adoption_Over_Time_Method2.jpg", path = "Output/Installation Rate Over Time/ZIP Code Areas", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```

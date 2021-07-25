@@ -1,0 +1,138 @@
+---
+title: "Spatial Regression"
+author: "Diren Kocakusak"
+date: "8/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries
+```{r}
+library(readr)
+library(lm.beta)
+library(spdep)
+library(spatialreg)
+library(maptools)
+library(leaflet)
+library(RColorBrewer)
+```
+
+# Importing and Attaching the Linear Regression Model Dataset
+```{r}
+tts_lm <- read_csv("tts_lm.csv", col_types = cols(X1 = col_skip()))
+attach(tts_lm)
+```
+
+## Linear Regression Model
+```{r}
+tts_lm.fit = lm(adoption_rate ~ . - zipcode, data = tts_lm)
+summary(tts_lm.fit)
+# Standardized Coefficients
+std_tts_lm <- lm.beta(tts_lm.fit)
+summary(std_tts_lm)
+```
+
+# Save the Residuals
+```{r}
+tts_lm$residuals <- residuals(tts_lm.fit)
+```
+
+# Export the Residuals
+```{r}
+write.csv(tts_lm, file = "tts_lm_resid.csv")
+```
+
+# Import the Shapefile
+```{r}
+chi.poly <- readShapePoly('tts_lm_shapefile/tts_lm.shp')
+```
+
+# Plot the Polygon
+```{r}
+plot(chi.poly)
+```
+
+## OLS
+```{r}
+chi.ols <- lm(adoption_r ~ near_pover + gini_index + median_age + hs_graduat + male_rate + work_home_ + more_than_ + three_or_m + white_rate + multiple_r + not_in_lab + median_yea + median_hou + Avg_DNI + democrat_p + innovative + electricit + openness + anti_envir, data = chi.poly@data)
+summary(chi.ols)
+```
+
+## Queen Criterion
+```{r}
+list.queen <- poly2nb(chi.poly, queen = TRUE)
+W <- nb2listw(list.queen, style = "W", zero.policy = TRUE)
+print(W, zero.policy = TRUE)
+```
+
+## Moran’s I Test
+```{r}
+moran.lm <- lm.morantest(chi.ols, W, alternative = "two.sided", zero.policy = TRUE)
+print(moran.lm)
+```
+
+## Lagrange Multiplier Test
+```{r}
+LM <- lm.LMtests(chi.ols, W, test="all", zero.policy = TRUE)
+print(LM)
+```
+
+## SAR Model
+```{r}
+sar.chi <- lagsarlm(adoption_r ~ near_pover + gini_index + median_age + hs_graduat + male_rate + work_home_ + more_than_ + three_or_m + white_rate + multiple_r + not_in_lab + median_yea + median_hou + Avg_DNI + democrat_p + innovative + electricit + openness + anti_envir, data = chi.poly@data, W, zero.policy = TRUE, tol.solve=1.0e-30)
+summary(sar.chi)
+```
+
+### Marginal Effects
+```{r}
+W_new <- as(W, "CsparseMatrix")
+trMC <- trW(W_new, type = "MC")
+impacts <- impacts(sar.chi, tr = trMC, R = 100)
+sums <- summary(impacts, zstats = T)
+# Print Coefficients
+data.frame(sums$res)
+# Print p-values
+data.frame(sums$pzmat)
+```
+
+### Export Residuals
+```{r}
+chi.poly@data$chi.sar.res <- resid(sar.chi)
+```
+
+## SEM Model
+```{r}
+errorsalm.chi <- errorsarlm(adoption_r ~ near_pover + gini_index + median_age + hs_graduat + male_rate + work_home_ + more_than_ + three_or_m + white_rate + multiple_r + not_in_lab + median_yea + median_hou + Avg_DNI + democrat_p + innovative + electricit + openness + anti_envir, data = chi.poly@data, W, zero.policy = TRUE, tol.solve=1.0e-30)
+summary(errorsalm.chi)
+```
+
+### Standardized Coefficients
+```{r}
+errorsalm.chi[["coefficients"]][["near_pover"]] * sd(chi.poly@data$near_pover) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["gini_index"]] * sd(chi.poly@data$gini_index) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["median_age"]] * sd(chi.poly@data$median_age) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["hs_graduat"]] * sd(chi.poly@data$hs_graduat) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["male_rate"]] * sd(chi.poly@data$male_rate) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["work_home_"]] * sd(chi.poly@data$work_home_) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["more_than_"]] * sd(chi.poly@data$more_than_) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["three_or_m"]] * sd(chi.poly@data$three_or_m) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["white_rate"]] * sd(chi.poly@data$white_rate) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["multiple_r"]] * sd(chi.poly@data$multiple_r) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["not_in_lab"]] * sd(chi.poly@data$not_in_lab) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["median_yea"]] * sd(chi.poly@data$median_yea) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["median_hou"]] * sd(chi.poly@data$median_hou) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["Avg_DNI"]] * sd(chi.poly@data$Avg_DNI) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["democrat_p"]] * sd(chi.poly@data$democrat_p) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["innovative"]] * sd(chi.poly@data$innovative) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["electricit"]] * sd(chi.poly@data$electricit) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["openness"]] * sd(chi.poly@data$openness) / sd(chi.poly@data$adoption_r)
+errorsalm.chi[["coefficients"]][["anti_envir"]] * sd(chi.poly@data$anti_envir) / sd(chi.poly@data$adoption_r)
+```
+
+### Export Residuals
+```{r}
+chi.poly@data$errorsalm.chi.res <- resid(errorsalm.chi)
+```

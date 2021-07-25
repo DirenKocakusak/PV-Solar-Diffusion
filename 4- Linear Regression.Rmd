@@ -1,0 +1,283 @@
+---
+title: "Linear Regression"
+author: "Diren Kocakusak"
+date: "8/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries
+```{r}
+library(readr)
+library(psych)
+library(car)
+library(lm.beta)
+library(olsrr)
+library(gvlma)
+library(ggplot2)
+```
+
+# Importing and Attaching the Data (from previous file)
+```{r}
+tts_zipcodes <- read_csv("tts_zipcodes_master.csv")
+attach(tts_zipcodes)
+```
+
+## Linear Regression Model
+```{r}
+tts_lm <- subset(tts_zipcodes, select = c("zipcode", "adoption_rate", "near_poverty", "gini_index", "median_age", "hs_graduate_rate", "male_rate", "work_home_rate", "more_than_ninty", "three_or_more_vehicles_rate", "white_rate", "multiple_race_rate", "not_in_labor_force", "median_year_lived", "median_house_value", "Avg_DNI", "democrat_percent_2016", "innovative_policies", "electricity_price", "openness", "anti_environment"))
+tts_lm <- tts_lm[which(tts_lm$adoption_rate <= 1),]
+tts_lm <- tts_lm[complete.cases(tts_lm),]
+tts_lm <- tts_lm[which(tts_lm$median_year_lived <= 100),]
+tts_lm <- tts_lm[which(tts_lm$median_house_value >= 0),]
+power <- summary(powerTransform(tts_lm$adoption_rate))
+tts_lm$adoption_rate <- bcPower(tts_lm$adoption_rate, power[["result"]][1])
+tts_lm.fit = lm(adoption_rate ~ . - zipcode, data = tts_lm)
+summary(tts_lm.fit)
+# Standardized Coefficients
+std_tts_lm <- lm.beta(tts_lm.fit)
+summary(std_tts_lm)
+```
+
+### Regression Diagnostics
+#### QQ Plot
+```{r}
+gg_qq <- function(x, distribution = "norm", ..., line.estimate = NULL, conf = 0.95,
+                  labels = names(x)){
+  q.function <- eval(parse(text = paste0("q", distribution)))
+  d.function <- eval(parse(text = paste0("d", distribution)))
+  x <- na.omit(x)
+  ord <- order(x)
+  n <- length(x)
+  P <- ppoints(length(x))
+  df <- data.frame(ord.x = x[ord], z = q.function(P, ...))
+
+  if(is.null(line.estimate)){
+    Q.x <- quantile(df$ord.x, c(0.25, 0.75))
+    Q.z <- q.function(c(0.25, 0.75), ...)
+    b <- diff(Q.x)/diff(Q.z)
+    coef <- c(Q.x[1] - b * Q.z[1], b)
+  } else {
+    coef <- coef(line.estimate(ord.x ~ z))
+  }
+
+  zz <- qnorm(1 - (1 - conf)/2)
+  SE <- (coef[2]/d.function(df$z)) * sqrt(P * (1 - P)/n)
+  fit.value <- coef[1] + coef[2] * df$z
+  df$upper <- fit.value + zz * SE
+  df$lower <- fit.value - zz * SE
+
+  if(!is.null(labels)){ 
+    df$label <- ifelse(df$ord.x > df$upper | df$ord.x < df$lower, labels[ord],"")
+    }
+
+  p <- ggplot(df, aes(x=z, y=ord.x)) +
+    xlab("Theoretical Quantiles") + ylab("Standardized Residuals") +
+    geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#eeeeee") +
+    geom_abline(intercept = coef[1], slope = coef[2], color = "#E8453C") +
+    geom_point(size = 0.5, color = "#275695") + 
+    theme_minimal(base_size = 12) +
+    theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+}
+gg_qq(tts_lm$studentized_resid)
+ggsave("QQ PLot.jpg", path = "Regression Analysis", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+#### Studentized Residuals
+```{r}
+tts_lm$studentized_resid <- rstudent(tts_lm.fit)
+ggplot(tts_lm, aes(x = studentized_resid)) + 
+  xlab("Studentized Residuals") + ylab("Density") +
+  geom_histogram(aes(y = ..density..), binwidth = .1, fill = "#275695", color = "#FFFFFF") +
+  stat_function(fun = dnorm, args = list(mean = mean(tts_lm$studentized_resid), sd = sd(tts_lm$studentized_resid)), color = "#E8453C", size = .75) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+ggsave("Distribution of Studentized Residuals.jpg", path = "Regression Analysis", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+#### Residuals vs Fitted Values
+```{r}
+forttts_lm.fit = fortify(tts_lm.fit)
+ggplot(data = forttts_lm.fit, aes(x = .fitted, y = .resid)) +
+  xlab("Residuals") + ylab("Fitted Values") +
+  geom_hline(yintercept = 0, color = "#E8453C") +
+  geom_point(color = "#275695", size = .5) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 12, color = "#595959", face = "bold"), axis.text.x = element_text(face="bold"), axis.text.y = element_text(face="bold"), axis.line.x = element_line(color = "#eeeeee", linetype = "solid", size = .5), panel.grid.major.y = element_line(color = "#D9D9D9", linetype = "dotted", size = .3), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), plot.margin = margin(1, 1, 1, 1, "cm"))
+ggsave("Scale Location Plot.jpg", path = "Regression Analysis", width = 27.46, height = 13.03, units = "cm", dpi = 300)
+```
+
+### Regression Diagnostics
+```{r}
+# Diagnostic Plots
+plot(tts_lm.fit)
+# Homescadasticity
+## Identifying Non-constant Error Variance
+ncvTest(tts_lm.fit)
+spreadLevelPlot(tts_lm.fit)
+## Plot Residuals vs. Fitted Values
+plot(tts_lm.fit$resid ~ tts_lm.fit$fitted.values)
+abline(h = 0, lty = 2)
+# Linearity
+## Partial Residual Plots
+crPlots(tts_lm.fit)
+# Independence
+## Durbin-Watson Test
+durbinWatsonTest(tts_lm.fit)
+# Normality
+## Studentized Deleted Residuals
+qqPlot(tts_lm.fit, labels=row.names(tts_lm), id.method = "identify", simulate = TRUE, main = "Q-Q Plot")
+## Plotting Studentized Residuals
+residplot(tts_lm.fit)
+# Multicollinearity
+vif(tts_lm.fit)
+```
+
+# Export the Data
+```{r}
+write.csv(tts_lm, file = "tts_lm.csv")
+```
+
+# More Regression Diagnostics
+## Diagnostic Plot
+```{r}
+par(mfrow = c(2,2))
+plot(tts_lm.fit)
+```
+
+## Homoscedasticity
+### Identifying Non-constant Error Variance in Car Package
+```{r}
+ncvTest(tts_lm.fit)
+spreadLevelPlot(tts_lm.fit)
+```
+
+### Plot Residuals vs. Fitted Values
+```{r}
+plot(tts_lm.fit$resid ~ tts_lm.fit$fitted.values)
+abline(h = 0, lty = 2)
+```
+
+## Linearity
+### Plot Residuals vs. Predictors
+```{r}
+residualPlots(tts_lm.fit)
+```
+
+#### Corrective Measures
+##### Maximum-likelihood Estimates by Box–Tidwell Transformations in Car Package
+```{r}
+boxTidwell(adoption_rate ~ . -zipcode, data = tts_lm11, max.iter = 2000)
+```
+
+## Independence
+### Durbin-Watson Test in Car Package
+```{r}
+durbinWatsonTest(tts_lm.fit)
+```
+
+### Plot Residuals vs. Time Variable
+```{r}
+plot(tts_lm.fit$resid ~ tts_lm$zipcode)
+```
+
+## Normality
+### Studentized Deleted Residuals by qqplot
+```{r}
+qqPlot(tts_lm.fit, labels=row.names(tts_lm), id.method = "identify", simulate = TRUE, main = "Q-Q Plot")
+```
+
+### QQ-Plot of Residuals
+```{r}
+qqnorm(tts_lm.fit$resid)
+qqline(tts_lm.fit$resid)
+```
+
+#### Corrective Measures
+##### Box–Cox transformation to normality in Car Package
+```{r}
+summary(powerTransform(tts_lm$adoption_rate))
+```
+
+### Plotting Studentized Residuals
+```{r}
+residplot <- function(fit, nbreaks = 20) { 
+  z <- rstudent(fit)
+  hist(z, breaks = nbreaks, freq = FALSE,
+    xlab = "Studentized Residual",
+    main = "Distribution of Errors")
+  rug(jitter(z), col = "#E8453C")
+  curve(dnorm(x, mean = mean(z), sd = sd(z)),
+    add = TRUE, col = "#275695", lwd = 2)
+  lines(density(z)$x, density(z)$y,
+    col = "#E8453C", lwd = 2, lty = 2)
+legend("topright",
+legend = c( "Normal Curve", "Kernel Density Curve"), lty = 1 : 2, col = c("#275695","red"), cex = .75)
+}
+residplot(tts_lm.fit)
+```
+
+## Multicollinearity Variance Inflation Factor in Car Package
+```{r}
+vif(tts_lm.fit)
+```
+
+## Outliers, High-levarage Points, and Influential Observations
+### Outlier Test in Car Package
+```{r}
+outlierTest(tts_lm.fit)
+```
+
+### Plot Studentized Residuals
+```{r}
+res.std <- rstandard(tts_lm.fit)
+plot(res.std, ylab="Standardized Residual", ylim=c(-3.5,3.5))
+abline(h =c(-3,0,3), lty = 2)
+index <- which(res.std > 3 | res.std < -3)
+text(index-20, res.std[index])
+a <- print(index)
+a
+a <- print(tts_lm$zipcode[index])
+```
+
+### High-leverate Points with Hat Statistics in Car Package
+```{r}
+hat.plot <- function(fit) {
+  p <- length(coefficients(fit))
+  n <- length(fitted(fit))
+  plot(hatvalues(fit), main = "Index Plot of Hat Values") 
+  abline(h = c(2,3) * p / n, col = "red", lty = 2)
+  identify(1 : n, hatvalues(fit), names(hatvalues(fit)))
+} 
+hat.plot(tts_lm.fit)
+```
+
+### Influential Observations with Cook's Distance Plot
+```{r}
+cutoff <- 4 / (nrow(tts_lm) - length(tts_lm.fit$coefficients) - 2) 
+plot(tts_lm.fit, which = 4, cook.levels = cutoff) 
+abline(h = cutoff, lty = 2, col = "red")
+```
+
+### Influence Index Plot in Car Package
+```{r}
+infIndexPlot(tts_lm.fit)
+```
+
+### Added Variable Plots in Car Package
+```{r}
+avPlots(tts_lm.fit, ask = FALSE, id.method = "identify")
+```
+
+### Added Variable Plots in Car Package
+```{r}
+avPlots(tts_lm.fit)
+```
+
+### Combine Outlier, Leverage, and Influence Plots in Car Package
+```{r}
+influencePlot(tts_lm11.fit, id.method = "identify", main = "Influence Plot", sub = "Circle size is proportional to Cook's distance")
+```

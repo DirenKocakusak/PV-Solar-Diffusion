@@ -1,0 +1,2195 @@
+---
+title: "Including Other Variables"
+author: "Diren Kocakusak"
+date: "10/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# For U.S. Census you should get an API Key and replace [api key] in the Code. More information: https://www.census.gov/data/developers/data-sets.html
+
+# Load Libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(readr)
+```
+
+# Importing and Attaching the zipcode table (from previous file) 
+```{r}
+tts_zipcodes <- read_csv("tts_zipcodes.csv")
+attach(tts_zipcodes)
+```
+
+# Owner-occupied residential structures that have one unit
+```{r}
+housing_units <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25032)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(housing_units, file = "Datasets/U.S. Census/2018 Housing Units Original.csv")
+```
+
+## Drop all other fields
+```{r}
+housing_units <- subset(housing_units, select = c("X..NAME", "B25032_003E", "B25032_004E"))
+names(housing_units)[names(housing_units) == 'X..NAME'] <- 'zipcode'
+names(housing_units)[names(housing_units) == 'B25032_003E'] <- 'single_unit_detached'
+names(housing_units)[names(housing_units) == 'B25032_004E'] <- 'single_unit_attached'
+```
+
+## Separate zipcode
+```{r}
+housing_units <- housing_units %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+housing_units <- subset(housing_units, select = c("zipcode", "single_unit_detached", "single_unit_attached"))
+```
+
+### Calculate the total number of owner-occupied residential structures that have one unit
+```{r}
+housing_units$total_houses <- housing_units$single_unit_detached + housing_units$single_unit_attached
+housing_units <- subset(housing_units, select = c("zipcode", "total_houses"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, housing_units, by.x='zipcode', by.y='zipcode')
+remove(housing_units)
+```
+
+# Median Income
+```{r}
+median_income <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B06011)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_income, file = "Datasets/U.S. Census/2018 Median Income Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_income <- subset(median_income, select = c("X..NAME", "B06011_001E"))
+names(median_income)[names(median_income) == 'X..NAME'] <- 'zipcode'
+names(median_income)[names(median_income) == 'B06011_001E'] <- 'median_income'
+```
+
+## Separate zipcode
+```{r}
+median_income <- median_income %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_income <- subset(median_income, select = c("zipcode", "median_income"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_income, by.x='zipcode', by.y='zipcode')
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Income
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_income >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_income)
+```
+
+# Median Income Gender
+```{r}
+median_income_gender <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B19326)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_income_gender, file = "Datasets/U.S. Census/2018 Median Income by Gender Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_income_gender <- subset(median_income_gender, select = c("X..NAME", "B19326_002E", "B19326_005E"))
+names(median_income_gender)[names(median_income_gender) == 'X..NAME'] <- 'zipcode'
+names(median_income_gender)[names(median_income_gender) == 'B19326_002E'] <- 'median_income_male'
+names(median_income_gender)[names(median_income_gender) == 'B19326_005E'] <- 'median_income_female'
+```
+
+## Separate zipcode
+```{r}
+median_income_gender <- median_income_gender %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_income_gender <- subset(median_income_gender, select = c("zipcode", "median_income_male", "median_income_female"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_income_gender, by.x='zipcode', by.y='zipcode')
+```
+
+### Turn Fields to Numeric
+```{r}
+tts_zipcodes$median_income_male <- as.numeric(tts_zipcodes$median_income_male)
+tts_zipcodes$median_income_female <- as.numeric(tts_zipcodes$median_income_female)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Income
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_income_male >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_income_female >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_income_male)
+cor(adoption_rate, median_income_female)
+```
+
+# Median Income Change (5 Years)
+```{r}
+median_income_2013 <- read.csv("https://api.census.gov/data/2013/acs/acs5?get=NAME,group(B06011)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_income_2013, file = "Datasets/U.S. Census/2013 Median Income Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_income_2013 <- subset(median_income_2013, select = c("X..NAME", "B06011_001E"))
+names(median_income_2013)[names(median_income_2013) == 'X..NAME'] <- 'zipcode'
+names(median_income_2013)[names(median_income_2013) == 'B06011_001E'] <- 'median_income_2013'
+```
+
+## Separate zipcode
+```{r}
+median_income_2013 <- median_income_2013 %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_income_2013 <- subset(median_income_2013, select = c("zipcode", "median_income_2013"))
+```
+
+## Merge Files, Drop Missing Variables and Calculate Median Income Change
+```{r}
+median_income_2013 <- merge(median_income_2013, median_income, by.x='zipcode', by.y='zipcode')
+median_income_2013 <- median_income_2013[which(median_income_2013$median_income_2013 >= 0),]
+median_income_2013 <- median_income_2013[which(median_income_2013$median_income >= 0),]
+median_income_2013$median_income_change <- median_income_2013$median_income - median_income_2013$median_income_2013
+median_income_2013 <- subset(median_income_2013, select = c("zipcode", "median_income_change"))
+```
+
+### Merge the final file and delete the old files from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_income_2013, by.x='zipcode', by.y='zipcode')
+remove(median_income_2013)
+remove(median_income)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_income_change)
+```
+
+# Median Income Gender Change (5 Years)
+```{r}
+median_income_gender_2013 <- read.csv("https://api.census.gov/data/2013/acs/acs5?get=NAME,group(B19326)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_income_gender_2013, file = "Datasets/U.S. Census/2013 Median Income by Gender Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_income_gender_2013 <- subset(median_income_gender_2013, select = c("X..NAME", "B19326_002E", "B19326_005E"))
+names(median_income_gender_2013)[names(median_income_gender_2013) == 'X..NAME'] <- 'zipcode'
+names(median_income_gender_2013)[names(median_income_gender_2013) == 'B19326_002E'] <- 'median_income_male_2013'
+names(median_income_gender_2013)[names(median_income_gender_2013) == 'B19326_005E'] <- 'median_income_female_2013'
+```
+
+## Separate zipcode
+```{r}
+median_income_gender_2013 <- median_income_gender_2013 %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_income_gender_2013 <- subset(median_income_gender_2013, select = c("zipcode", "median_income_male_2013", "median_income_female_2013"))
+```
+
+## Merge Files, Drop Missing Variables and Calculate Median Income Change
+```{r}
+median_income_gender_2013 <- merge(median_income_gender_2013, median_income_gender, by.x='zipcode', by.y='zipcode')
+median_income_gender_2013 <- median_income_gender_2013[which(median_income_gender_2013$median_income_male_2013 >= 0),]
+median_income_gender_2013 <- median_income_gender_2013[which(median_income_gender_2013$median_income_female_2013 >= 0),]
+median_income_gender_2013 <- median_income_gender_2013[which(median_income_gender_2013$median_income_male >= 0),]
+median_income_gender_2013 <- median_income_gender_2013[which(median_income_gender_2013$median_income_female >= 0),]
+median_income_gender_2013$median_income_male_change <- median_income_gender_2013$median_income_male - median_income_gender_2013$median_income_male_2013
+median_income_gender_2013$median_income_female_change <- median_income_gender_2013$median_income_female - median_income_gender_2013$median_income_female_2013
+median_income_gender_2013 <- subset(median_income_gender_2013, select = c("zipcode", "median_income_male_change", "median_income_female_change"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_income_gender_2013, by.x='zipcode', by.y='zipcode')
+remove(median_income_gender_2013)
+remove(median_income_gender)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_income_male_change)
+cor(adoption_rate, median_income_female_change)
+```
+
+# Poverty Level
+```{r}
+poverty_level <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B05010)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(poverty_level, file = "Datasets/U.S. Census/2018 Poverty Level Original.csv")
+```
+
+## Drop all other fields
+```{r}
+poverty_level <- subset(poverty_level, select = c("X..NAME", "B05010_001E", "B05010_002E", "B05010_010E", "B05010_018E"))
+names(poverty_level)[names(poverty_level) == 'X..NAME'] <- 'zipcode'
+names(poverty_level)[names(poverty_level) == 'B05010_001E'] <- 'total_poverty'
+names(poverty_level)[names(poverty_level) == 'B05010_002E'] <- 'below_poverty'
+names(poverty_level)[names(poverty_level) == 'B05010_010E'] <- 'near_poverty'
+names(poverty_level)[names(poverty_level) == 'B05010_018E'] <- 'not_in_poverty'
+```
+
+## Separate zipcode
+```{r}
+poverty_level <- poverty_level %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+poverty_level <- subset(poverty_level, select = c("zipcode", "total_poverty", "below_poverty", "near_poverty", "not_in_poverty"))
+```
+
+## Calculate percentages and remove total
+```{r}
+poverty_level$below_poverty_rate <- poverty_level$below_poverty / poverty_level$total_poverty
+poverty_level$near_poverty_rate <- poverty_level$near_poverty / poverty_level$total_poverty
+poverty_level$not_in_poverty_rate <- poverty_level$not_in_poverty / poverty_level$total_poverty
+poverty_level <- subset(poverty_level, select = c("zipcode", "below_poverty", "near_poverty", "not_in_poverty", "below_poverty_rate", "near_poverty_rate", "not_in_poverty_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, poverty_level, by.x='zipcode', by.y='zipcode')
+remove(poverty_level)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Poverty Level
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$below_poverty_rate != "NaN"),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, below_poverty)
+cor(adoption_rate, below_poverty_rate)
+cor(adoption_rate, near_poverty)
+cor(adoption_rate, near_poverty_rate)
+cor(adoption_rate, not_in_poverty)
+cor(adoption_rate, not_in_poverty_rate)
+```
+
+# GINI Index
+```{r}
+gini_index <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B19083)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(gini_index, file = "Datasets/U.S. Census/2018 GINI Index Original.csv")
+```
+
+## Drop all other fields
+```{r}
+gini_index <- subset(gini_index, select = c("X..NAME", "B19083_001E"))
+names(gini_index)[names(gini_index) == 'X..NAME'] <- 'zipcode'
+names(gini_index)[names(gini_index) == 'B19083_001E'] <- 'gini_index'
+```
+
+## Separate zipcode
+```{r}
+gini_index <- gini_index %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+gini_index <- subset(gini_index, select = c("zipcode", "gini_index"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, gini_index, by.x='zipcode', by.y='zipcode')
+remove(gini_index)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for GINI Index
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$gini_index != "null"),]
+tts_zipcodes_test$gini_index <- as.numeric(tts_zipcodes_test$gini_index)
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$gini_index >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, gini_index)
+```
+
+# Mortgage Status
+```{r}
+mortgage_status <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25027)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(mortgage_status, file = "Datasets/U.S. Census/2018 Mortgage Status Original.csv")
+```
+
+## Drop all other fields
+```{r}
+mortgage_status <- subset(mortgage_status, select = c("X..NAME", "B25027_001E", "B25027_002E", "B25027_010E"))
+names(mortgage_status)[names(mortgage_status) == 'X..NAME'] <- 'zipcode'
+names(mortgage_status)[names(mortgage_status) == 'B25027_001E'] <- 'total_houses'
+names(mortgage_status)[names(mortgage_status) == 'B25027_002E'] <- 'with_mortgage'
+names(mortgage_status)[names(mortgage_status) == 'B25027_010E'] <- 'without_mortgage'
+```
+
+## Separate zipcode
+```{r}
+mortgage_status <- mortgage_status %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+mortgage_status <- subset(mortgage_status, select = c("zipcode", "total_houses", "with_mortgage", "without_mortgage"))
+```
+
+## Calculate percentages and remove total
+```{r}
+mortgage_status$with_rate <- mortgage_status$with_mortgage / mortgage_status$total_houses
+mortgage_status$without_rate <- mortgage_status$without_mortgage / mortgage_status$total_houses
+mortgage_status <- subset(mortgage_status, select = c("zipcode", "with_mortgage", "without_mortgage", "with_rate", "without_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, mortgage_status, by.x='zipcode', by.y='zipcode')
+remove(mortgage_status)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, with_mortgage)
+cor(adoption_rate, with_rate)
+cor(adoption_rate, without_mortgage)
+cor(adoption_rate, without_rate)
+```
+
+# Median Age
+```{r}
+median_age <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B01002)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_age, file = "Datasets/U.S. Census/2018 Median Age Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_age <- subset(median_age, select = c("X..NAME", "B01002_001E"))
+names(median_age)[names(median_age) == 'X..NAME'] <- 'zipcode'
+names(median_age)[names(median_age) == 'B01002_001E'] <- 'median_age'
+```
+
+## Separate zipcode
+```{r}
+median_age <- median_age %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_age <- subset(median_age, select = c("zipcode", "median_age"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_age, by.x='zipcode', by.y='zipcode')
+remove(median_age)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Age
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_age >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_age)
+```
+
+# Educational Attainment
+```{r}
+educational_attainment <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B06009)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(educational_attainment, file = "Datasets/U.S. Census/2018 Educational Attainment Original.csv")
+```
+
+## Drop all other fields
+```{r}
+educational_attainment <- subset(educational_attainment, select = c("X..NAME", "B06009_001E", "B06009_002E", "B06009_003E", "B06009_004E", "B06009_005E", "B06009_006E"))
+names(educational_attainment)[names(educational_attainment) == 'X..NAME'] <- 'zipcode'
+names(educational_attainment)[names(educational_attainment) == 'B06009_001E'] <- 'total_people'
+names(educational_attainment)[names(educational_attainment) == 'B06009_002E'] <- 'less_than_hs'
+names(educational_attainment)[names(educational_attainment) == 'B06009_003E'] <- 'hs_graduate'
+names(educational_attainment)[names(educational_attainment) == 'B06009_004E'] <- 'some_college'
+names(educational_attainment)[names(educational_attainment) == 'B06009_005E'] <- 'bachelors'
+names(educational_attainment)[names(educational_attainment) == 'B06009_006E'] <- 'graduate'
+```
+
+## Separate zipcode
+```{r}
+educational_attainment <- educational_attainment %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+educational_attainment <- subset(educational_attainment, select = c("zipcode", "total_people", "less_than_hs", "hs_graduate", "some_college", "bachelors", "graduate"))
+```
+
+## Calculate percentages and remove total
+```{r}
+educational_attainment$less_than_hs_rate <- educational_attainment$less_than_hs / educational_attainment$total_people
+educational_attainment$hs_graduate_rate <- educational_attainment$hs_graduate / educational_attainment$total_people
+educational_attainment$some_college_rate <- educational_attainment$some_college / educational_attainment$total_people
+educational_attainment$bachelors_rate <- educational_attainment$bachelors / educational_attainment$total_people
+educational_attainment$graduate_rate <- educational_attainment$graduate / educational_attainment$total_people
+educational_attainment <- subset(educational_attainment, select = c("zipcode", "less_than_hs", "less_than_hs_rate", "hs_graduate", "hs_graduate_rate", "some_college", "some_college_rate", "bachelors", "bachelors_rate", "graduate", "graduate_rate", "total_people"))
+```
+
+## Generate Culumative Fields
+```{r}
+educational_attainment$hs_or_higher <- educational_attainment$hs_graduate + educational_attainment$some_college + educational_attainment$bachelors + educational_attainment$graduate
+educational_attainment$hs_or_higher_rate <- educational_attainment$hs_or_higher / educational_attainment$total_people
+educational_attainment$some_college_or_higher <- educational_attainment$some_college + educational_attainment$bachelors + educational_attainment$graduate
+educational_attainment$some_college_or_higher_rate <- educational_attainment$some_college_or_higher / educational_attainment$total_people
+educational_attainment$bachelors_or_higher <- educational_attainment$bachelors + educational_attainment$graduate
+educational_attainment$bachelors_or_higher_rate <- educational_attainment$bachelors_or_higher / educational_attainment$total_people
+educational_attainment <- subset(educational_attainment, select = c("zipcode", "less_than_hs", "less_than_hs_rate", "hs_graduate", "hs_graduate_rate", "some_college", "some_college_rate", "bachelors", "bachelors_rate", "graduate", "graduate_rate", "hs_or_higher", "hs_or_higher_rate", "some_college_or_higher", "some_college_or_higher_rate", "bachelors_or_higher", "bachelors_or_higher_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, educational_attainment, by.x='zipcode', by.y='zipcode')
+remove(educational_attainment)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, less_than_hs)
+cor(adoption_rate, less_than_hs_rate)
+cor(adoption_rate, hs_graduate)
+cor(adoption_rate, hs_graduate_rate)
+cor(adoption_rate, some_college)
+cor(adoption_rate, some_college_rate)
+cor(adoption_rate, bachelors)
+cor(adoption_rate, bachelors_rate)
+cor(adoption_rate, graduate)
+cor(adoption_rate, graduate_rate)
+cor(adoption_rate, hs_or_higher)
+cor(adoption_rate, hs_or_higher_rate)
+cor(adoption_rate, some_college_or_higher)
+cor(adoption_rate, some_college_or_higher_rate)
+cor(adoption_rate, bachelors_or_higher)
+cor(adoption_rate, bachelors_or_higher_rate)
+```
+
+# Housing Tenure Type
+```{r}
+housing_occupancy <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25032)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(housing_occupancy, file = "Datasets/U.S. Census/2018 Housing Occupancy Original.csv")
+```
+
+## Drop all other fields
+```{r}
+housing_occupancy <- subset(housing_occupancy, select = c("X..NAME", "B25032_001E", "B25032_002E", "B25032_013E"))
+names(housing_occupancy)[names(housing_occupancy) == 'X..NAME'] <- 'zipcode'
+names(housing_occupancy)[names(housing_occupancy) == 'B25032_001E'] <- 'total_housing_units'
+names(housing_occupancy)[names(housing_occupancy) == 'B25032_002E'] <- 'owner_occupied'
+names(housing_occupancy)[names(housing_occupancy) == 'B25032_013E'] <- 'renter_occupied'
+```
+
+## Separate zipcode
+```{r}
+housing_occupancy <- housing_occupancy %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+housing_occupancy <- subset(housing_occupancy, select = c("zipcode", "total_housing_units", "owner_occupied", "renter_occupied"))
+```
+
+### Calculate percentages and remove total
+```{r}
+housing_occupancy$owner_rate <- housing_occupancy$owner_occupied / housing_occupancy$total_housing_units
+housing_occupancy$renter_rate <- housing_occupancy$renter_occupied / housing_occupancy$total_housing_units
+housing_occupancy <- subset(housing_occupancy, select = c("zipcode", "owner_occupied", "owner_rate", "renter_occupied", "renter_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, housing_occupancy, by.x='zipcode', by.y='zipcode')
+remove(housing_occupancy)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, owner_occupied)
+cor(adoption_rate, owner_rate)
+cor(adoption_rate, renter_occupied)
+cor(adoption_rate, renter_rate)
+```
+
+# Gender
+```{r}
+gender <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B01001)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(gender, file = "Datasets/U.S. Census/2018 Gender Original.csv")
+```
+
+## Drop all other fields
+```{r}
+gender <- subset(gender, select = c("X..NAME", "B01001_002E", "B01001_026E"))
+names(gender)[names(gender) == 'X..NAME'] <- 'zipcode'
+names(gender)[names(gender) == 'B01001_002E'] <- 'male'
+names(gender)[names(gender) == 'B01001_026E'] <- 'female'
+```
+
+## Separate zipcode
+```{r}
+gender <- gender %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+gender <- subset(gender, select = c("zipcode", "male", "female"))
+```
+
+### Calculate percentages
+```{r}
+gender$male_rate <- gender$male / (gender$male + gender$female)
+gender$female_rate <- gender$female / (gender$male + gender$female)
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, gender, by.x='zipcode', by.y='zipcode')
+remove(gender)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, male)
+cor(adoption_rate, male_rate)
+cor(adoption_rate, female)
+cor(adoption_rate, female_rate)
+```
+
+# Marital Status
+```{r}
+marital_status <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B12006)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(marital_status, file = "Datasets/U.S. Census/2018 Marital Status Original.csv")
+```
+
+## Drop all other fields
+```{r}
+marital_status <- subset(marital_status, select = c("X..NAME", "B12006_001E", "B12006_002E", "B12006_013E"))
+names(marital_status)[names(marital_status) == 'X..NAME'] <- 'zipcode'
+names(marital_status)[names(marital_status) == 'B12006_001E'] <- 'total_marital'
+names(marital_status)[names(marital_status) == 'B12006_002E'] <- 'never_married'
+names(marital_status)[names(marital_status) == 'B12006_013E'] <- 'now_married'
+```
+
+## Separate zipcode
+```{r}
+marital_status <- marital_status %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+marital_status <- subset(marital_status, select = c("zipcode", "total_marital", "never_married", "now_married"))
+```
+
+### Calculate percentages and delete total
+```{r}
+marital_status$never_married_rate <- marital_status$never_married / marital_status$total_marital
+marital_status$now_married_rate <- marital_status$now_married / marital_status$total_marital
+marital_status <- subset(marital_status, select = c("zipcode", "never_married", "now_married", "never_married_rate", "now_married_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, marital_status, by.x='zipcode', by.y='zipcode')
+remove(marital_status)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, never_married)
+cor(adoption_rate, never_married_rate)
+cor(adoption_rate, now_married)
+cor(adoption_rate, now_married_rate)
+```
+
+# Citizenship Status
+```{r}
+citizenship_status <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B05001)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(citizenship_status, file = "Datasets/U.S. Census/2018 Citizenship Status Original.csv")
+```
+
+## Drop all other fields
+```{r}
+citizenship_status <- subset(citizenship_status, select = c("X..NAME", "B05001_001E", "B05001_002E", "B05001_006E"))
+names(citizenship_status)[names(citizenship_status) == 'X..NAME'] <- 'zipcode'
+names(citizenship_status)[names(citizenship_status) == 'B05001_001E'] <- 'total'
+names(citizenship_status)[names(citizenship_status) == 'B05001_002E'] <- 'citizen'
+names(citizenship_status)[names(citizenship_status) == 'B05001_006E'] <- 'foreign'
+```
+
+## Separate zipcode
+```{r}
+citizenship_status <- citizenship_status %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+citizenship_status <- subset(citizenship_status, select = c("zipcode", "total", "citizen", "foreign"))
+```
+
+### Calculate percentages and remove total
+```{r}
+citizenship_status$citizen_rate <- citizenship_status$citizen / citizenship_status$total
+citizenship_status$foreign_rate <- citizenship_status$foreign / citizenship_status$total
+citizenship_status <- subset(citizenship_status, select = c("zipcode", "citizen", "citizen_rate", "foreign", "foreign_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, citizenship_status, by.x='zipcode', by.y='zipcode')
+remove(citizenship_status)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, citizen)
+cor(adoption_rate, citizen_rate)
+cor(adoption_rate, foreign)
+cor(adoption_rate, foreign_rate)
+```
+
+# Median Number of Rooms
+```{r}
+median_rooms <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25021)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_rooms, file = "Datasets/U.S. Census/2018 Median Rooms Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_rooms <- subset(median_rooms, select = c("X..NAME", "B25021_001E", "B25021_002E"))
+names(median_rooms)[names(median_rooms) == 'X..NAME'] <- 'zipcode'
+names(median_rooms)[names(median_rooms) == 'B25021_001E'] <- 'median_rooms'
+names(median_rooms)[names(median_rooms) == 'B25021_002E'] <- 'median_rooms_owner'
+```
+
+## Separate zipcode
+```{r}
+median_rooms <- median_rooms %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_rooms <- subset(median_rooms, select = c("zipcode", "median_rooms", "median_rooms_owner"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_rooms, by.x='zipcode', by.y='zipcode')
+remove(median_rooms)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Number of Rooms
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_rooms >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_rooms_owner >= 0),]
+```
+
+# Commuting Characteristics
+```{r}
+commuting_characteristics <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B08006)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(commuting_characteristics, file = "Datasets/U.S. Census/2018 Commuting Characteristics Original.csv")
+```
+
+## Drop all other fields
+```{r}
+commuting_characteristics <- subset(commuting_characteristics, select = c("X..NAME", "B08006_001E", "B08006_002E", "B08006_008E", "B08006_014E", "B08006_015E", "B08006_017E"))
+names(commuting_characteristics)[names(commuting_characteristics) == 'X..NAME'] <- 'zipcode'
+names(commuting_characteristics)[names(commuting_characteristics) == 'B08006_001E'] <- 'total'
+names(commuting_characteristics)[names(commuting_characteristics) == 'B08006_002E'] <- 'car'
+names(commuting_characteristics)[names(commuting_characteristics) == 'B08006_008E'] <- 'public_transportation'
+names(commuting_characteristics)[names(commuting_characteristics) == 'B08006_014E'] <- 'bicycle'
+names(commuting_characteristics)[names(commuting_characteristics) == 'B08006_015E'] <- 'walk'
+names(commuting_characteristics)[names(commuting_characteristics) == 'B08006_017E'] <- 'work_home'
+```
+
+## Separate zipcode
+```{r}
+commuting_characteristics <- commuting_characteristics %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+commuting_characteristics <- subset(commuting_characteristics, select = c("zipcode", "total", "car", "public_transportation", "bicycle", "walk", "work_home"))
+```
+
+### Calculate percentages and remove total
+```{r}
+commuting_characteristics$bicycle_walk <- commuting_characteristics$bicycle + commuting_characteristics$walk
+commuting_characteristics$car_rate <- commuting_characteristics$car / commuting_characteristics$total
+commuting_characteristics$public_transportation_rate <- commuting_characteristics$public_transportation / commuting_characteristics$total
+commuting_characteristics$bicycle_walk_rate <- commuting_characteristics$bicycle_walk / commuting_characteristics$total
+commuting_characteristics$work_home_rate <- commuting_characteristics$work_home / commuting_characteristics$total
+commuting_characteristics <- subset(commuting_characteristics, select = c("zipcode", "car", "car_rate", "public_transportation", "public_transportation_rate", "bicycle_walk", "bicycle_walk_rate", "work_home", "work_home_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, commuting_characteristics, by.x='zipcode', by.y='zipcode')
+remove(commuting_characteristics)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Commuting Characteristics
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$car >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$car_rate >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, car)
+cor(adoption_rate, car_rate)
+cor(adoption_rate, public_transportation)
+cor(adoption_rate, public_transportation_rate)
+cor(adoption_rate, bicycle_walk)
+cor(adoption_rate, bicycle_walk_rate)
+cor(adoption_rate, work_home)
+cor(adoption_rate, work_home_rate)
+```
+
+# Travel Time to Work
+```{r}
+travel_time <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B08303)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(travel_time, file = "Datasets/U.S. Census/2018 Travel Time to Work Original.csv")
+```
+
+## Drop all other fields
+```{r}
+travel_time <- subset(travel_time, select = c("X..NAME", "B08303_001E", "B08303_002E", "B08303_003E", "B08303_004E", "B08303_005E", "B08303_006E", "B08303_007E", "B08303_008E", "B08303_009E", "B08303_010E", "B08303_011E", "B08303_012E", "B08303_013E"))
+names(travel_time)[names(travel_time) == 'X..NAME'] <- 'zipcode'
+names(travel_time)[names(travel_time) == 'B08303_001E'] <- 'total_travel_time'
+names(travel_time)[names(travel_time) == 'B08303_002E'] <- 'less_than_five'
+names(travel_time)[names(travel_time) == 'B08303_003E'] <- 'five_to_ten'
+names(travel_time)[names(travel_time) == 'B08303_004E'] <- 'ten_to_fifteen'
+names(travel_time)[names(travel_time) == 'B08303_005E'] <- 'fifteen_to_twelve'
+names(travel_time)[names(travel_time) == 'B08303_006E'] <- 'twelve_to_twentyfive'
+names(travel_time)[names(travel_time) == 'B08303_007E'] <- 'twentyfive_to_thirty'
+names(travel_time)[names(travel_time) == 'B08303_008E'] <- 'thirty_to_thirtyfive'
+names(travel_time)[names(travel_time) == 'B08303_009E'] <- 'thirtyfive_to_forty'
+names(travel_time)[names(travel_time) == 'B08303_010E'] <- 'forty_to_fortyfive'
+names(travel_time)[names(travel_time) == 'B08303_011E'] <- 'fortyfive_to_sixty'
+names(travel_time)[names(travel_time) == 'B08303_012E'] <- 'sixty_to_ninty'
+names(travel_time)[names(travel_time) == 'B08303_013E'] <- 'more_than_ninty'
+```
+
+## Separate zipcode
+```{r}
+travel_time <- travel_time %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+travel_time <- subset(travel_time, select = c("zipcode", "total_travel_time", "less_than_five", "five_to_ten", "ten_to_fifteen", "fifteen_to_twelve", "twelve_to_twentyfive", "twentyfive_to_thirty", "thirty_to_thirtyfive", "thirtyfive_to_forty", "forty_to_fortyfive", "fortyfive_to_sixty", "sixty_to_ninty", "more_than_ninty"))
+```
+
+### Remove Missing Values 
+```{r}
+travel_time <- travel_time[which(travel_time$total_travel_time >= 0),]
+travel_time <- travel_time[which(travel_time$less_than_five >= 0),]
+travel_time <- travel_time[which(travel_time$five_to_ten >= 0),]
+travel_time <- travel_time[which(travel_time$ten_to_fifteen >= 0),]
+travel_time <- travel_time[which(travel_time$fifteen_to_twelve >= 0),]
+travel_time <- travel_time[which(travel_time$twelve_to_twentyfive >= 0),]
+travel_time <- travel_time[which(travel_time$twentyfive_to_thirty >= 0),]
+travel_time <- travel_time[which(travel_time$thirty_to_thirtyfive >= 0),]
+travel_time <- travel_time[which(travel_time$thirtyfive_to_forty >= 0),]
+travel_time <- travel_time[which(travel_time$forty_to_fortyfive >= 0),]
+travel_time <- travel_time[which(travel_time$fortyfive_to_sixty >= 0),]
+travel_time <- travel_time[which(travel_time$sixty_to_ninty >= 0),]
+travel_time <- travel_time[which(travel_time$more_than_ninty >= 0),]
+```
+
+### Calculate percentages and remove total
+```{r}
+travel_time$less_than_five_rate <- travel_time$less_than_five / travel_time$total_travel_time
+travel_time$five_to_thirty <- travel_time$five_to_ten + travel_time$ten_to_fifteen + travel_time$fifteen_to_twelve + travel_time$twelve_to_twentyfive + travel_time$twentyfive_to_thirty
+travel_time$five_to_thirty_rate <- travel_time$five_to_thirty / travel_time$total_travel_time
+travel_time$thirty_to_sixty <- travel_time$thirty_to_thirtyfive + travel_time$thirtyfive_to_forty + travel_time$forty_to_fortyfive + travel_time$fortyfive_to_sixty
+travel_time$thirty_to_sixty_rate <- travel_time$thirty_to_sixty / travel_time$total_travel_time
+travel_time$sixty_to_ninty_rate <- travel_time$sixty_to_ninty / travel_time$total_travel_time
+travel_time$more_than_ninty_rate <- travel_time$more_than_ninty / travel_time$total_travel_time
+travel_time <- subset(travel_time, select = c("zipcode", "less_than_five", "less_than_five_rate", "five_to_thirty", "five_to_thirty_rate", "thirty_to_sixty", "thirty_to_sixty_rate", "sixty_to_ninty", "sixty_to_ninty_rate", "more_than_ninty", "more_than_ninty_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, travel_time, by.x='zipcode', by.y='zipcode')
+remove(travel_time)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Travel Time to Work
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$less_than_five_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$five_to_thirty_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$thirty_to_sixty_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$sixty_to_ninty_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$more_than_ninty_rate >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, less_than_five)
+cor(adoption_rate, less_than_five_rate)
+cor(adoption_rate, five_to_thirty)
+cor(adoption_rate, five_to_thirty_rate)
+cor(adoption_rate, thirty_to_sixty)
+cor(adoption_rate, thirty_to_sixty_rate)
+cor(adoption_rate, sixty_to_ninty)
+cor(adoption_rate, sixty_to_ninty_rate)
+cor(adoption_rate, more_than_ninty)
+cor(adoption_rate, more_than_ninty_rate)
+```
+
+# Car Ownership
+```{r}
+car_ownership <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B08203)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(car_ownership, file = "Datasets/U.S. Census/2018 Car Ownership Original.csv")
+```
+
+## Drop all other fields
+```{r}
+car_ownership <- subset(car_ownership, select = c("X..NAME", "B08203_001E", "B08203_002E", "B08203_003E", "B08203_004E", "B08203_005E", "B08203_006E"))
+names(car_ownership)[names(car_ownership) == 'X..NAME'] <- 'zipcode'
+names(car_ownership)[names(car_ownership) == 'B08203_001E'] <- 'total_car'
+names(car_ownership)[names(car_ownership) == 'B08203_002E'] <- 'no_vehicle'
+names(car_ownership)[names(car_ownership) == 'B08203_003E'] <- 'one_vehicle'
+names(car_ownership)[names(car_ownership) == 'B08203_004E'] <- 'two_vehicles'
+names(car_ownership)[names(car_ownership) == 'B08203_005E'] <- 'three_vehicles'
+names(car_ownership)[names(car_ownership) == 'B08203_006E'] <- 'four_or_more_vehicles'
+```
+
+## Separate zipcode
+```{r}
+car_ownership <- car_ownership %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+car_ownership <- subset(car_ownership, select = c("zipcode", "total_car", "no_vehicle", "one_vehicle", "two_vehicles", "three_vehicles", "four_or_more_vehicles"))
+```
+
+### Calculate percentages and remove total
+```{r}
+car_ownership$no_vehicle_rate <- car_ownership$no_vehicle / car_ownership$total_car
+car_ownership$one_vehicle_rate <- car_ownership$one_vehicle / car_ownership$total_car
+car_ownership$two_vehicles_rate <- car_ownership$two_vehicles / car_ownership$total_car
+car_ownership$three_or_more_vehicles <- car_ownership$three_vehicles + car_ownership$four_or_more_vehicles
+car_ownership$three_or_more_vehicles_rate <- car_ownership$three_or_more_vehicles / car_ownership$total_car
+car_ownership <- subset(car_ownership, select = c("zipcode", "no_vehicle", "one_vehicle", "two_vehicles", "three_or_more_vehicles", "no_vehicle_rate", "one_vehicle_rate", "two_vehicles_rate", "three_or_more_vehicles_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, car_ownership, by.x='zipcode', by.y='zipcode')
+remove(car_ownership)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Commuting Characteristics
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$no_vehicle >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, no_vehicle)
+cor(adoption_rate, no_vehicle_rate)
+cor(adoption_rate, one_vehicle)
+cor(adoption_rate, one_vehicle_rate)
+cor(adoption_rate, two_vehicles)
+cor(adoption_rate, two_vehicles_rate)
+cor(adoption_rate, three_or_more_vehicles)
+cor(adoption_rate, three_or_more_vehicles_rate)
+```
+
+# Race
+```{r}
+race <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B02001)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(race, file = "Datasets/U.S. Census/2018 Race Original.csv")
+```
+
+## Drop all other fields
+```{r}
+race <- subset(race, select = c("X..NAME", "B02001_001E", "B02001_002E", "B02001_003E", "B02001_005E", "B02001_008E"))
+names(race)[names(race) == 'X..NAME'] <- 'zipcode'
+names(race)[names(race) == 'B02001_001E'] <- 'total_race'
+names(race)[names(race) == 'B02001_002E'] <- 'white'
+names(race)[names(race) == 'B02001_003E'] <- 'black'
+names(race)[names(race) == 'B02001_005E'] <- 'asian'
+names(race)[names(race) == 'B02001_008E'] <- 'multiple'
+```
+
+## Separate zipcode
+```{r}
+race <- race %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+race <- subset(race, select = c("zipcode", "total_race", "white", "black", "asian", "multiple"))
+```
+
+### Calculate percentages and remove total
+```{r}
+race$white_rate <- race$white / race$total_race
+race$black_rate <- race$black / race$total_race
+race$asian_rate <- race$asian / race$total_race
+race$multiple_race_rate <- race$multiple / race$total_race
+race <- subset(race, select = c("zipcode", "white", "white_rate", "black", "black_rate", "asian", "asian_rate", "multiple", "multiple_race_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, race, by.x='zipcode', by.y='zipcode')
+remove(race)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, white)
+cor(adoption_rate, white_rate)
+cor(adoption_rate, black)
+cor(adoption_rate, black_rate)
+cor(adoption_rate, asian)
+cor(adoption_rate, asian_rate)
+cor(adoption_rate, multiple)
+cor(adoption_rate, multiple_race_rate)
+```
+
+# Ethnicity
+```{r}
+ethnicity <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B03003)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(ethnicity, file = "Datasets/U.S. Census/2018 Ethnicity Original.csv")
+```
+
+## Drop all other fields
+```{r}
+ethnicity <- subset(ethnicity, select = c("X..NAME", "B03003_001E", "B03003_003E"))
+names(ethnicity)[names(ethnicity) == 'X..NAME'] <- 'zipcode'
+names(ethnicity)[names(ethnicity) == 'B03003_001E'] <- 'total_ethnicity'
+names(ethnicity)[names(ethnicity) == 'B03003_003E'] <- 'hispanic_or_latino'
+```
+
+## Separate zipcode
+```{r}
+ethnicity <- ethnicity %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+ethnicity <- subset(ethnicity, select = c("zipcode", "total_ethnicity", "hispanic_or_latino"))
+```
+
+### Calculate percentages and remove total
+```{r}
+ethnicity$hispanic_or_latino_rate <- ethnicity$hispanic_or_latino / ethnicity$total_ethnicity
+ethnicity <- subset(ethnicity, select = c("zipcode", "hispanic_or_latino", "hispanic_or_latino_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, ethnicity, by.x='zipcode', by.y='zipcode')
+remove(ethnicity)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, hispanic_or_latino)
+cor(adoption_rate, hispanic_or_latino_rate)
+```
+
+# Household Type
+```{r}
+household_type <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B11001)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(household_type, file = "Datasets/U.S. Census/2018 Household Type Original.csv")
+```
+
+## Drop all other fields
+```{r}
+household_type <- subset(household_type, select = c("X..NAME", "B11001_001E", "B11001_002E", "B11001_008E"))
+names(household_type)[names(household_type) == 'X..NAME'] <- 'zipcode'
+names(household_type)[names(household_type) == 'B11001_001E'] <- 'total_households'
+names(household_type)[names(household_type) == 'B11001_002E'] <- 'family_households'
+names(household_type)[names(household_type) == 'B11001_008E'] <- 'living_alone'
+```
+
+## Separate zipcode
+```{r}
+household_type <- household_type %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+household_type <- subset(household_type, select = c("zipcode", "total_households", "family_households", "living_alone"))
+```
+
+### Calculate percentages and remove total
+```{r}
+household_type$family_households_rate <- household_type$family_households / household_type$total_households
+household_type$living_alone_rate <- household_type$living_alone / household_type$total_households
+household_type <- subset(household_type, select = c("zipcode", "family_households", "family_households_rate", "living_alone", "living_alone_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, household_type, by.x='zipcode', by.y='zipcode')
+remove(household_type)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, family_households)
+cor(adoption_rate, family_households_rate)
+cor(adoption_rate, living_alone)
+cor(adoption_rate, living_alone_rate)
+```
+
+# Household Size
+```{r}
+household_size <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B08201)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(household_size, file = "Datasets/U.S. Census/2018 Household Size Original.csv")
+```
+
+## Drop all other fields
+```{r}
+household_size <- subset(household_size, select = c("X..NAME", "B08201_001E", "B08201_007E", "B08201_013E", "B08201_019E", "B08201_025E"))
+names(household_size)[names(household_size) == 'X..NAME'] <- 'zipcode'
+names(household_size)[names(household_size) == 'B08201_001E'] <- 'total_households'
+names(household_size)[names(household_size) == 'B08201_007E'] <- 'one_person'
+names(household_size)[names(household_size) == 'B08201_013E'] <- 'two_person'
+names(household_size)[names(household_size) == 'B08201_019E'] <- 'three_person'
+names(household_size)[names(household_size) == 'B08201_025E'] <- 'four_or_more_person'
+```
+
+## Separate zipcode
+```{r}
+household_size <- household_size %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+household_size <- subset(household_size, select = c("zipcode", "total_households", "one_person", "two_person", "three_person", "four_or_more_person"))
+```
+
+### Calculate percentages and remove total
+```{r}
+household_size$one_person_rate <- household_size$one_person / household_size$total_households
+household_size$two_person_rate <- household_size$two_person / household_size$total_households
+household_size$three_person_rate <- household_size$three_person / household_size$total_households
+household_size$four_or_more_person_rate <- household_size$four_or_more_person / household_size$total_households
+household_size <- subset(household_size, select = c("zipcode", "one_person", "one_person_rate", "two_person", "two_person_rate", "three_person", "three_person_rate", "four_or_more_person", "four_or_more_person_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, household_size, by.x='zipcode', by.y='zipcode')
+remove(household_size)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Household Size
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$one_person_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$two_person_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$three_person_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$four_or_more_person_rate >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, one_person)
+cor(adoption_rate, one_person_rate)
+cor(adoption_rate, two_person)
+cor(adoption_rate, two_person_rate)
+cor(adoption_rate, three_person)
+cor(adoption_rate, three_person_rate)
+cor(adoption_rate, four_or_more_person)
+cor(adoption_rate, four_or_more_person_rate)
+```
+
+# Owner Household Size
+```{r}
+owner_household_size <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25009)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(owner_household_size, file = "Datasets/U.S. Census/2018 Owner Household Size Original.csv")
+```
+
+## Drop all other fields
+```{r}
+owner_household_size <- subset(owner_household_size, select = c("X..NAME", "B25009_002E", "B25009_003E", "B25009_004E", "B25009_005E", "B25009_006E", "B25009_007E", "B25009_008E", "B25009_009E"))
+names(owner_household_size)[names(owner_household_size) == 'X..NAME'] <- 'zipcode'
+names(owner_household_size)[names(owner_household_size) == 'B25009_002E'] <- 'total_owner_households'
+names(owner_household_size)[names(owner_household_size) == 'B25009_003E'] <- 'owner_one_person'
+names(owner_household_size)[names(owner_household_size) == 'B25009_004E'] <- 'owner_two_person'
+names(owner_household_size)[names(owner_household_size) == 'B25009_005E'] <- 'owner_three_person'
+names(owner_household_size)[names(owner_household_size) == 'B25009_006E'] <- 'owner_four_person'
+names(owner_household_size)[names(owner_household_size) == 'B25009_007E'] <- 'owner_five_person'
+names(owner_household_size)[names(owner_household_size) == 'B25009_008E'] <- 'owner_six_person'
+names(owner_household_size)[names(owner_household_size) == 'B25009_009E'] <- 'owner_seven_or_more_person'
+```
+
+## Separate zipcode
+```{r}
+owner_household_size <- owner_household_size %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+owner_household_size <- subset(owner_household_size, select = c("zipcode", "total_owner_households", "owner_one_person", "owner_two_person", "owner_three_person", "owner_four_person", "owner_five_person", "owner_six_person", "owner_seven_or_more_person"))
+```
+
+### Calculate percentages and remove total
+```{r}
+owner_household_size$owner_one_person_rate <- owner_household_size$owner_one_person / owner_household_size$total_owner_households
+owner_household_size$owner_two_person_rate <- owner_household_size$owner_two_person / owner_household_size$total_owner_households
+owner_household_size$owner_three_person_rate <- owner_household_size$owner_three_person / owner_household_size$total_owner_households
+owner_household_size$owner_four_or_more_person <- owner_household_size$owner_four_person + owner_household_size$owner_five_person + owner_household_size$owner_six_person + owner_household_size$owner_seven_or_more_person
+owner_household_size$owner_four_or_more_person_rate <- owner_household_size$owner_four_or_more_person / owner_household_size$total_owner_households
+owner_household_size <- subset(owner_household_size, select = c("zipcode", "owner_one_person", "owner_one_person_rate", "owner_two_person", "owner_two_person_rate", "owner_three_person", "owner_three_person_rate", "owner_four_or_more_person", "owner_four_or_more_person_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, owner_household_size, by.x='zipcode', by.y='zipcode')
+remove(owner_household_size)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, owner_one_person)
+cor(adoption_rate, owner_one_person_rate)
+cor(adoption_rate, owner_two_person)
+cor(adoption_rate, owner_two_person_rate)
+cor(adoption_rate, owner_three_person)
+cor(adoption_rate, owner_three_person_rate)
+cor(adoption_rate, owner_four_or_more_person)
+cor(adoption_rate, owner_four_or_more_person_rate)
+```
+
+# Number of Earners in the Family
+```{r}
+earners <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B19122)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(earners, file = "Datasets/U.S. Census/2018 Number of Earners in the Family Original.csv")
+```
+
+## Drop all other fields
+```{r}
+earners <- subset(earners, select = c("X..NAME", "B19122_001E", "B19122_002E", "B19122_003E", "B19122_004E", "B19122_005E"))
+names(earners)[names(earners) == 'X..NAME'] <- 'zipcode'
+names(earners)[names(earners) == 'B19122_001E'] <- 'total_earner_households'
+names(earners)[names(earners) == 'B19122_002E'] <- 'no_earners'
+names(earners)[names(earners) == 'B19122_003E'] <- 'one_earner'
+names(earners)[names(earners) == 'B19122_004E'] <- 'two_earners'
+names(earners)[names(earners) == 'B19122_005E'] <- 'three_or_more_earners'
+```
+
+## Separate zipcode
+```{r}
+earners <- earners %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+earners <- subset(earners, select = c("zipcode", "total_earner_households", "no_earners", "one_earner", "two_earners", "three_or_more_earners"))
+```
+
+### Calculate percentages and remove total
+```{r}
+earners$no_earners_rate <- earners$no_earners / earners$total_earner_households
+earners$one_earner_rate <- earners$one_earner / earners$total_earner_households
+earners$two_earners_rate <- earners$two_earners / earners$total_earner_households
+earners$three_or_more_earners_rate <- earners$three_or_more_earners / earners$total_earner_households
+earners <- subset(earners, select = c("zipcode", "no_earners", "no_earners_rate", "one_earner", "one_earner_rate", "two_earners", "two_earners_rate", "three_or_more_earners", "three_or_more_earners_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, earners, by.x='zipcode', by.y='zipcode')
+remove(earners)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Earners
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$no_earners_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$one_earner_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$two_earners_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$three_or_more_earners_rate >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, no_earners)
+cor(adoption_rate, no_earners_rate)
+cor(adoption_rate, one_earner)
+cor(adoption_rate, one_earner_rate)
+cor(adoption_rate, two_earners)
+cor(adoption_rate, two_earners_rate)
+cor(adoption_rate, three_or_more_earners)
+cor(adoption_rate, three_or_more_earners_rate)
+```
+
+# Employment Status
+```{r}
+employment_status <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B23025)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(employment_status, file = "Datasets/U.S. Census/2018 Employment Status Original.csv")
+```
+
+## Drop all other fields
+```{r}
+employment_status <- subset(employment_status, select = c("X..NAME", "B23025_001E", "B23025_002E", "B23025_007E"))
+names(employment_status)[names(employment_status) == 'X..NAME'] <- 'zipcode'
+names(employment_status)[names(employment_status) == 'B23025_001E'] <- 'total_employment_status'
+names(employment_status)[names(employment_status) == 'B23025_002E'] <- 'in_labor_force'
+names(employment_status)[names(employment_status) == 'B23025_007E'] <- 'not_in_labor_force'
+```
+
+## Separate zipcode
+```{r}
+employment_status <- employment_status %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+employment_status <- subset(employment_status, select = c("zipcode", "total_employment_status", "in_labor_force", "not_in_labor_force"))
+```
+
+### Calculate percentages and remove total
+```{r}
+employment_status$in_labor_force_rate <- employment_status$in_labor_force / employment_status$total_employment_status
+employment_status$not_in_labor_force_rate <- employment_status$not_in_labor_force / employment_status$total_employment_status
+employment_status <- subset(employment_status, select = c("zipcode", "in_labor_force", "in_labor_force_rate", "not_in_labor_force", "not_in_labor_force_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, employment_status, by.x='zipcode', by.y='zipcode')
+remove(employment_status)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Employment Status
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$in_labor_force_rate >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$not_in_labor_force_rate >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, in_labor_force)
+cor(adoption_rate, in_labor_force_rate)
+cor(adoption_rate, not_in_labor_force)
+cor(adoption_rate, not_in_labor_force_rate)
+```
+
+# Geographical Mobility
+```{r}
+geographical_mobility <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B07001)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(geographical_mobility, file = "Datasets/U.S. Census/2018 Geographical Mobility Original.csv")
+```
+
+## Drop all other fields
+```{r}
+geographical_mobility <- subset(geographical_mobility, select = c("X..NAME", "B07001_001E", "B07001_017E", "B07001_081E"))
+names(geographical_mobility)[names(geographical_mobility) == 'X..NAME'] <- 'zipcode'
+names(geographical_mobility)[names(geographical_mobility) == 'B07001_001E'] <- 'total_mobility'
+names(geographical_mobility)[names(geographical_mobility) == 'B07001_017E'] <- 'same_house'
+names(geographical_mobility)[names(geographical_mobility) == 'B07001_081E'] <- 'moved_from_abroad'
+```
+
+## Separate zipcode
+```{r}
+geographical_mobility <- geographical_mobility %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+geographical_mobility <- subset(geographical_mobility, select = c("zipcode", "total_mobility", "same_house", "moved_from_abroad"))
+```
+
+### Calculate percentages and remove total
+```{r}
+geographical_mobility$same_house_rate <- geographical_mobility$same_house / geographical_mobility$total_mobility
+geographical_mobility$moved_from_abroad_rate <- geographical_mobility$moved_from_abroad / geographical_mobility$total_mobility
+geographical_mobility <- subset(geographical_mobility, select = c("zipcode", "same_house", "same_house_rate", "moved_from_abroad", "moved_from_abroad_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, geographical_mobility, by.x='zipcode', by.y='zipcode')
+remove(geographical_mobility)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Geographical Mobility
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$same_house_rate >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, same_house)
+cor(adoption_rate, same_house_rate)
+cor(adoption_rate, moved_from_abroad)
+cor(adoption_rate, moved_from_abroad_rate)
+```
+
+# Median Year Householder Moved into Unit
+```{r}
+median_year_lived <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25039)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(median_year_lived, file = "Datasets/U.S. Census/2018 Median Year Lived Original.csv")
+```
+
+## Drop all other fields
+```{r}
+median_year_lived <- subset(median_year_lived, select = c("X..NAME", "B25039_001E", "B25039_002E"))
+names(median_year_lived)[names(median_year_lived) == 'X..NAME'] <- 'zipcode'
+names(median_year_lived)[names(median_year_lived) == 'B25039_001E'] <- 'median_year_moved_in'
+names(median_year_lived)[names(median_year_lived) == 'B25039_002E'] <- 'median_year_owner_moved_in'
+```
+
+## Separate zipcode
+```{r}
+median_year_lived <- median_year_lived %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+median_year_lived <- subset(median_year_lived, select = c("zipcode", "median_year_moved_in", "median_year_owner_moved_in"))
+```
+
+### Calculate Median Year Lived
+```{r}
+median_year_lived$median_year_lived <- 2018 - median_year_lived$median_year_moved_in
+median_year_lived$median_year_owner_lived <- 2018 - median_year_lived$median_year_owner_moved_in
+median_year_lived <- subset(median_year_lived, select = c("zipcode", "median_year_lived", "median_year_owner_lived"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, median_year_lived, by.x='zipcode', by.y='zipcode')
+remove(median_year_lived)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Year Householder Moved into Unit
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_year_lived < 100),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_year_owner_lived < 100),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_year_lived)
+cor(adoption_rate, median_year_owner_lived)
+```
+
+# Median Age of the Structure
+```{r}
+structure_age <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25037)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(structure_age, file = "Datasets/U.S. Census/2018 Median Age of the Structure Original.csv")
+```
+
+## Drop all other fields
+```{r}
+structure_age <- subset(structure_age, select = c("X..NAME", "B25037_001E", "B25037_002E"))
+names(structure_age)[names(structure_age) == 'X..NAME'] <- 'zipcode'
+names(structure_age)[names(structure_age) == 'B25037_001E'] <- 'year_built'
+names(structure_age)[names(structure_age) == 'B25037_002E'] <- 'year_built_owner'
+```
+
+## Separate zipcode
+```{r}
+structure_age <- structure_age %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+structure_age <- subset(structure_age, select = c("zipcode", "year_built", "year_built_owner"))
+```
+
+### Calculate structure age
+```{r}
+structure_age$structure_age <- 2018 - structure_age$year_built
+structure_age$structure_age_owner <- 2018 - structure_age$year_built_owner
+structure_age <- subset(structure_age, select = c("zipcode", "structure_age", "structure_age_owner"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, structure_age, by.x='zipcode', by.y='zipcode')
+remove(structure_age)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Year Structure Built
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$structure_age < 100),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$structure_age_owner < 100),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, structure_age)
+cor(adoption_rate, structure_age_owner)
+```
+
+# Occupancy Status
+```{r}
+occupancy_status <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25002)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(occupancy_status, file = "Datasets/U.S. Census/2018 Occupancy Status Original.csv")
+```
+
+## Drop all other fields
+```{r}
+occupancy_status <- subset(occupancy_status, select = c("X..NAME", "B25002_001E", "B25002_002E", "B25002_003E"))
+names(occupancy_status)[names(occupancy_status) == 'X..NAME'] <- 'zipcode'
+names(occupancy_status)[names(occupancy_status) == 'B25002_001E'] <- 'total_occupancy'
+names(occupancy_status)[names(occupancy_status) == 'B25002_002E'] <- 'occupied'
+names(occupancy_status)[names(occupancy_status) == 'B25002_003E'] <- 'vacant'
+```
+
+## Separate zipcode
+```{r}
+occupancy_status <- occupancy_status %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+occupancy_status <- subset(occupancy_status, select = c("zipcode", "total_occupancy", "occupied", "vacant"))
+```
+
+### Calculate percentages and remove total
+```{r}
+occupancy_status$occupied_rate <- occupancy_status$occupied / occupancy_status$total_occupancy
+occupancy_status$vacant_rate <- occupancy_status$vacant / occupancy_status$total_occupancy
+occupancy_status <- subset(occupancy_status, select = c("zipcode", "occupied", "occupied_rate", "vacant", "vacant_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, occupancy_status, by.x='zipcode', by.y='zipcode')
+remove(occupancy_status)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, occupied)
+cor(adoption_rate, occupied_rate)
+cor(adoption_rate, vacant)
+cor(adoption_rate, vacant_rate)
+```
+
+# Residential structures that have one unit
+```{r}
+residential_units <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25032)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(residential_units, file = "Datasets/U.S. Census/2018 Residential Units Original.csv")
+```
+
+## Drop all other fields
+```{r}
+residential_units <- subset(residential_units, select = c("X..NAME", "B25032_001E", "B25032_003E", "B25032_004E", "B25032_014E", "B25032_015E"))
+names(residential_units)[names(residential_units) == 'X..NAME'] <- 'zipcode'
+names(residential_units)[names(residential_units) == 'B25032_001E'] <- 'total_units'
+names(residential_units)[names(residential_units) == 'B25032_003E'] <- 'owner_single_detached'
+names(residential_units)[names(residential_units) == 'B25032_004E'] <- 'owner_single_attached'
+names(residential_units)[names(residential_units) == 'B25032_014E'] <- 'renter_single_detached'
+names(residential_units)[names(residential_units) == 'B25032_015E'] <- 'renter_single_attached'
+```
+
+## Separate zipcode
+```{r}
+residential_units <- residential_units %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+residential_units <- subset(residential_units, select = c("zipcode", "total_units", "owner_single_detached", "owner_single_attached", "renter_single_detached", "renter_single_attached"))
+```
+
+### Calculate percentages and remove total
+```{r}
+residential_units$owner_single_attached_rate <- residential_units$owner_single_attached / residential_units$total_units
+residential_units$owner_single_detached_rate <- residential_units$owner_single_detached / residential_units$total_units
+residential_units$owner_single <- residential_units$owner_single_attached + residential_units$owner_single_detached
+residential_units$owner_single_rate <- residential_units$owner_single / residential_units$total_units
+residential_units$renter_single <- residential_units$renter_single_attached + residential_units$renter_single_detached
+residential_units$renter_single_rate <- residential_units$renter_single / residential_units$total_units
+residential_units$single_family <- residential_units$owner_single + residential_units$renter_single
+residential_units$single_family_rate <- residential_units$single_family / residential_units$total_units
+residential_units <- subset(residential_units, select = c("zipcode", "owner_single_attached", "owner_single_attached_rate", "owner_single_detached", "owner_single_detached_rate", "owner_single", "owner_single_rate", "renter_single", "renter_single_rate", "single_family", "single_family_rate"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, residential_units, by.x='zipcode', by.y='zipcode')
+remove(residential_units)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, owner_single_attached)
+cor(adoption_rate, owner_single_attached_rate)
+cor(adoption_rate, owner_single_detached)
+cor(adoption_rate, owner_single_detached_rate)
+cor(adoption_rate, owner_single)
+cor(adoption_rate, owner_single_rate)
+cor(adoption_rate, renter_single)
+cor(adoption_rate, renter_single_rate)
+cor(adoption_rate, single_family)
+cor(adoption_rate, single_family_rate)
+```
+
+# Median Value of Owner-occupied Housing Units
+```{r}
+house_value <- read.csv("https://api.census.gov/data/2018/acs/acs5?get=NAME,group(B25077)&for=zip%20code%20tabulation%20area:*&key=[api key]")
+write.csv(house_value, file = "Datasets/U.S. Census/2018 Median House Value Original.csv")
+```
+
+## Drop all other fields
+```{r}
+house_value <- subset(house_value, select = c("X..NAME", "B25077_001E"))
+names(house_value)[names(house_value) == 'X..NAME'] <- 'zipcode'
+names(house_value)[names(house_value) == 'B25077_001E'] <- 'median_house_value'
+```
+
+## Separate zipcode
+```{r}
+house_value <- house_value %>% separate(zipcode, c("zcta5", "zipcode"), sep=" ")
+house_value <- subset(house_value, select = c("zipcode", "median_house_value"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, house_value, by.x='zipcode', by.y='zipcode')
+remove(house_value)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove missing observations for Median Value of Owner-occupied Housing Units
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$median_house_value >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, median_house_value)
+```
+
+# Solar Insolation (GHI): Data obtained from https://nsrdb.nrel.gov/
+## Import the Dataset
+```{r}
+zipcode_GHI <- read_csv("Datasets/NREL/zipcode_GHI.csv", 
+    col_types = cols(GEOID10 = col_character()))
+```
+
+## Delete Other Fields
+```{r}
+zipcode_GHI <- subset(zipcode_GHI, select = c("ZCTA5CE10", "Avg_GHI"))
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, zipcode_GHI, by.x='zipcode', by.y='ZCTA5CE10')
+remove(zipcode_GHI)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, Avg_GHI)
+```
+
+# Solar Insolation (DNI): Data obtained from https://nsrdb.nrel.gov/
+## Import the Dataset
+```{r}
+zipcode_DNI <- read_csv("Datasets/NREL/zipcode_DNI.csv", 
+    col_types = cols(GEOID10 = col_character()))
+```
+
+## Delete Other Fields
+```{r}
+zipcode_DNI <- subset(zipcode_DNI, select = c("GEOID10", "Avg_DNI"))
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, zipcode_DNI, by.x='zipcode', by.y='GEOID10')
+remove(zipcode_DNI)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, Avg_DNI)
+```
+
+# Presidential Election: : Data obtained from https://electionlab.mit.edu/
+## Import Dataset
+```{r}
+presidential_election <- read_csv("Datasets/MIT Election Lab/County Presidential Election Returns 2000-2016.csv")
+```
+
+## Remove other years
+```{r}
+presidential_election_2016 <- presidential_election[which(presidential_election$year == "2016"), ]
+presidential_election_2012 <- presidential_election[which(presidential_election$year == "2012"), ]
+presidential_election_2008 <- presidential_election[which(presidential_election$year == "2008"), ]
+```
+
+## Remove other parties
+```{r}
+presidential_election_2016 <- presidential_election_2016[which(presidential_election_2016$party == "democrat"), ]
+presidential_election_2012 <- presidential_election_2012[which(presidential_election_2012$party == "democrat"), ]
+presidential_election_2008 <- presidential_election_2008[which(presidential_election_2008$party == "democrat"), ]
+```
+
+## Rename Democratic votes
+```{r}
+names(presidential_election_2016)[names(presidential_election_2016) == 'candidatevotes'] <- 'democratic_votes_2016'
+names(presidential_election_2012)[names(presidential_election_2012) == 'candidatevotes'] <- 'democratic_votes_2012'
+names(presidential_election_2008)[names(presidential_election_2008) == 'candidatevotes'] <- 'democratic_votes_2008'
+names(presidential_election_2016)[names(presidential_election_2016) == 'totalvotes'] <- 'totalvotes_2016'
+names(presidential_election_2012)[names(presidential_election_2012) == 'totalvotes'] <- 'totalvotes_2012'
+names(presidential_election_2008)[names(presidential_election_2008) == 'totalvotes'] <- 'totalvotes_2008'
+```
+
+## Remove other fields
+```{r}
+presidential_election_2016 <- subset(presidential_election_2016, select = c("FIPS", "democratic_votes_2016", "totalvotes_2016"))
+presidential_election_2012 <- subset(presidential_election_2012, select = c("FIPS", "democratic_votes_2012", "totalvotes_2012"))
+presidential_election_2008 <- subset(presidential_election_2008, select = c("FIPS", "democratic_votes_2008", "totalvotes_2008"))
+```
+
+## Import Reference File: Data obtained from https://www.census.gov/geographies/reference-files/time-series/geo/gazetteer-files.html
+```{r}
+reference_file_zip_county <- read_csv("Datasets/Reference Files/reference_file_zip_county.csv", 
+    col_types = cols(ZIPCODE = col_character()))
+```
+
+## Remove other fields
+```{r}
+reference_file_zip_county <- subset(reference_file_zip_county, select = c("GEOID", "ZIPCODE"))
+```
+
+## Merge Files
+```{r}
+presidential_election_2016 <- merge(reference_file_zip_county, presidential_election_2016, by.x='GEOID', by.y='FIPS')
+presidential_election_2012 <- merge(reference_file_zip_county, presidential_election_2012, by.x='GEOID', by.y='FIPS')
+presidential_election_2008 <- merge(reference_file_zip_county, presidential_election_2008, by.x='GEOID', by.y='FIPS')
+```
+
+## Remove other fields
+```{r}
+presidential_election_2016 <- subset(presidential_election_2016, select = c("ZIPCODE", "democratic_votes_2016", "totalvotes_2016"))
+presidential_election_2012 <- subset(presidential_election_2012, select = c("ZIPCODE", "democratic_votes_2012", "totalvotes_2012"))
+presidential_election_2008 <- subset(presidential_election_2008, select = c("ZIPCODE", "democratic_votes_2008", "totalvotes_2008"))
+```
+
+## Drop Other Variables and Aggregate Remaining Zipcodes
+```{r}
+presidential_election_2016_votes <- aggregate(democratic_votes_2016 ~ ZIPCODE, presidential_election_2016, FUN = sum)
+presidential_election_2016_total <- aggregate(totalvotes_2016 ~ ZIPCODE, presidential_election_2016, FUN = sum)
+presidential_election_2012_votes <- aggregate(democratic_votes_2012 ~ ZIPCODE, presidential_election_2012, FUN = sum)
+presidential_election_2012_total <- aggregate(totalvotes_2012 ~ ZIPCODE, presidential_election_2012, FUN = sum)
+presidential_election_2008_votes <- aggregate(democratic_votes_2008 ~ ZIPCODE, presidential_election_2008, FUN = sum)
+presidential_election_2008_total <- aggregate(totalvotes_2008 ~ ZIPCODE, presidential_election_2008, FUN = sum)
+```
+
+## Merge Files Back
+```{r}
+political_view <- merge(presidential_election_2016_votes, presidential_election_2016_total, by.x='ZIPCODE', by.y='ZIPCODE')
+political_view <- merge(political_view, presidential_election_2012_votes, by.x='ZIPCODE', by.y='ZIPCODE')
+political_view <- merge(political_view, presidential_election_2012_total, by.x='ZIPCODE', by.y='ZIPCODE')
+political_view <- merge(political_view, presidential_election_2008_votes, by.x='ZIPCODE', by.y='ZIPCODE')
+political_view <- merge(political_view, presidential_election_2008_total, by.x='ZIPCODE', by.y='ZIPCODE')
+```
+
+## Remove Old Data Frames
+```{r}
+remove(reference_file_zip_county)
+remove(presidential_election)
+remove(presidential_election_2016)
+remove(presidential_election_2016_votes)
+remove(presidential_election_2016_total)
+remove(presidential_election_2012)
+remove(presidential_election_2012_votes)
+remove(presidential_election_2012_total)
+remove(presidential_election_2008)
+remove(presidential_election_2008_votes)
+remove(presidential_election_2008_total)
+```
+
+## Calculate Percent
+```{r}
+political_view$democrat_percent_2016 <- political_view$democratic_votes_2016 / political_view$totalvotes_2016
+political_view$democrat_percent_2012 <- political_view$democratic_votes_2012 / political_view$totalvotes_2012
+political_view$democrat_percent_2008 <- political_view$democratic_votes_2008 / political_view$totalvotes_2008
+```
+
+## Calculate Change
+```{r}
+political_view$change_2012_2016_vote <- political_view$democratic_votes_2016 - political_view$democratic_votes_2012
+political_view$change_2012_2016_percent <- (political_view$democratic_votes_2016 / political_view$totalvotes_2016) - (political_view$democratic_votes_2012 / political_view$totalvotes_2012)
+political_view$change_2008_2016_vote <- political_view$democratic_votes_2016 - political_view$democratic_votes_2008
+political_view$change_2008_2016_percent <- (political_view$democratic_votes_2016 / political_view$totalvotes_2016) - (political_view$democratic_votes_2008 / political_view$totalvotes_2008)
+```
+
+## Remove the total vote field
+```{r}
+political_view <- subset(political_view, select = c("ZIPCODE", "democratic_votes_2016", "democrat_percent_2016", "democratic_votes_2012", "democrat_percent_2012", "democratic_votes_2008", "democrat_percent_2008", "change_2012_2016_vote", "change_2012_2016_percent", "change_2008_2016_vote", "change_2008_2016_percent"))
+```
+
+### Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, political_view, by.x='zipcode', by.y='ZIPCODE')
+remove(political_view)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, democratic_votes_2016)
+cor(adoption_rate, democrat_percent_2016)
+cor(adoption_rate, democratic_votes_2012)
+cor(adoption_rate, democrat_percent_2012)
+cor(adoption_rate, democratic_votes_2008)
+cor(adoption_rate, democrat_percent_2008)
+cor(adoption_rate, change_2012_2016_vote)
+cor(adoption_rate, change_2012_2016_percent)
+cor(adoption_rate, change_2008_2016_vote)
+cor(adoption_rate, change_2008_2016_percent)
+```
+
+# Environmentally Innovative Policies: Data obtained from Greenberg and Schneider (2020)
+## Import the Dataset
+```{r}
+innovative_policies <- read_csv("Datasets/Environmentally Innovative Policies.csv")
+```
+
+## Rename the Fields
+```{r}
+names(innovative_policies)[names(innovative_policies) == 'Abbreviations'] <- 'abbr'
+names(innovative_policies)[names(innovative_policies) == 'Statistical Score'] <- 'innovative_policies'
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, innovative_policies, by.x='State', by.y='abbr')
+remove(innovative_policies)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, innovative_policies)
+```
+
+# Statewide Solar Policies: Data obtained from https://www.dsireusa.org/
+## Import the Dataset
+```{r}
+statewide_policies <- read_csv("Datasets/DSIRE/Statewide Policies.csv")
+```
+
+## Rename the Fields
+```{r}
+names(statewide_policies)[names(statewide_policies) == 'Abbreviations'] <- 'abbr'
+names(statewide_policies)[names(statewide_policies) == 'Renewable Energy'] <- 'renewable_policies'
+names(statewide_policies)[names(statewide_policies) == 'All Solar Technologies'] <- 'solar_technology_policies'
+names(statewide_policies)[names(statewide_policies) == 'Solar Photovoltaics'] <- 'solar_photovoltaic_policies'
+names(statewide_policies)[names(statewide_policies) == 'Solar Photovoltaics - Financial Incentives'] <- 'photovoltaic_financial_incentives'
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, statewide_policies, by.x='State', by.y='abbr')
+remove(statewide_policies)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, renewable_policies)
+cor(adoption_rate, solar_technology_policies)
+cor(adoption_rate, solar_photovoltaic_policies)
+cor(adoption_rate, photovoltaic_financial_incentives)
+```
+
+# Project Sunroof: Data obtained from https://sunroof.withgoogle.com/data-explorer/
+## Import the Dataset
+```{r}
+project_sunroof <- read_csv("Datasets/Project Sunroof/project-sunroof-postal_code.csv", 
+    col_types = cols(region_name = col_character()))
+```
+
+## Rename the Fields and Delete Other Fields
+```{r}
+names(project_sunroof)[names(project_sunroof) == 'yearly_sunlight_kwh_kw_threshold_avg'] <- 'optimum_sunlight'
+names(project_sunroof)[names(project_sunroof) == 'yearly_sunlight_kwh_total'] <- 'roof_space_potential'
+names(project_sunroof)[names(project_sunroof) == 'number_of_panels_total'] <- 'solar_panel_potential'
+names(project_sunroof)[names(project_sunroof) == 'carbon_offset_metric_tons'] <- 'carbon_reduction_potential'
+project_sunroof <- subset(project_sunroof, select = c("region_name", "optimum_sunlight", "roof_space_potential", "solar_panel_potential", "carbon_reduction_potential"))
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, project_sunroof, by.x='zipcode', by.y='region_name')
+remove(project_sunroof)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove Missing Information for Project Sunroof
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$roof_space_potential >= 0),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$solar_panel_potential >= 0),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, optimum_sunlight)
+cor(adoption_rate, roof_space_potential)
+cor(adoption_rate, solar_panel_potential)
+cor(adoption_rate, carbon_reduction_potential)
+```
+
+# Cost of Electricity: Data obtained from https://www.eia.gov/electricity/state/
+## Import the Dataset
+```{r}
+cost_of_electricity <- read_csv("Datasets/U.S. Energy Information Administration/Cost of Electricity.csv")
+```
+
+## Rename the Fields and Delete Other Fields
+```{r}
+names(cost_of_electricity)[names(cost_of_electricity) == 'Average Price of Electricity for Residential Users in March 2020 (Cents per Kilowatthour)'] <- 'electricity_price'
+names(cost_of_electricity)[names(cost_of_electricity) == 'Average Monthly Bill for Residential Users in 2018'] <- 'electricity_bill'
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, cost_of_electricity, by.x='State', by.y='State')
+remove(cost_of_electricity)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, electricity_price)
+cor(adoption_rate, electricity_bill)
+```
+
+# Density: Data obtained from https://www.socialexplorer.com/
+## Import the Datasets
+```{r}
+population_density <- read_csv("Datasets/Social Explorer/population density.csv")
+housing_units <- read_csv("Datasets/Social Explorer/housing_units.csv")
+```
+
+## Merge the Datasets delete the old datasets from current session
+```{r}
+density <- merge(population_density, housing_units, by.x='zipcode', by.y='zipcode')
+remove(population_density)
+remove(housing_units)
+```
+
+## Calculate the Housing Unit Density, Rename Fields and Delete Other Fields
+```{r}
+density$housing_unit_density <- density$housing_units / density$area
+names(density)[names(density) == 'density'] <- 'population_density'
+density <- subset(density, select = c("zipcode", "population_density", "housing_unit_density"))
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, density, by.x='zipcode', by.y='zipcode')
+remove(density)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, population_density)
+cor(adoption_rate, housing_unit_density)
+```
+
+# Correlates of State Policy: Data obtained from http://ippsr.msu.edu/public-policy/correlates-state-policy
+## Import the Datasets
+```{r}
+correlates_of_state_policy <- read_csv("Datasets/Correlates of State Policy/correlates_of_state_policy.csv")
+```
+
+## Merge the final file and delete the old file from current session
+```{r}
+tts_zipcodes <- merge(tts_zipcodes, correlates_of_state_policy, by.x='State', by.y='State')
+remove(correlates_of_state_policy)
+```
+
+#### Basic Statistics (Test)
+##### Copy and Remove Missing Information for Adoption Rate
+```{r}
+tts_zipcodes_test <- tts_zipcodes
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$adoption_rate <= 1),]
+tts_zipcodes_test <- tts_zipcodes_test[which(tts_zipcodes_test$total_houses >= 0.1),]
+```
+
+##### Remove Missing Information for Correlates of State Policy
+```{r}
+tts_zipcodes_test <- tts_zipcodes_test[complete.cases(tts_zipcodes_test),]
+```
+
+##### Correlation
+```{r}
+attach(tts_zipcodes_test)
+cor(adoption_rate, vst_ec)
+cor(adoption_rate, vst_soc)
+cor(adoption_rate, pollib_median)
+cor(adoption_rate, innovatescore)
+cor(adoption_rate, policypriorityscore)
+cor(adoption_rate, know_gov)
+cor(adoption_rate, know_govparty)
+cor(adoption_rate, soc_capital)
+cor(adoption_rate, citi6013)
+cor(adoption_rate, extraversion)
+cor(adoption_rate, agreeableness)
+cor(adoption_rate, conscientiousness)
+cor(adoption_rate, neuroticism)
+cor(adoption_rate, openness)
+cor(adoption_rate, pro_environment)
+cor(adoption_rate, anti_environment)
+cor(adoption_rate, neutral_environment)
+```
+
+# Save the Master Dataset for Regression
+```{r}
+write.csv(tts_zipcodes, file = "tts_zipcodes_master.csv")
+```

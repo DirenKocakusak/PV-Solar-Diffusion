@@ -1,0 +1,82 @@
+---
+title: "Principle Component Analysis"
+author: "Diren Kocakusak"
+date: "17/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries
+```{r}
+library(readr)
+library(lm.beta)
+library(pls)
+library(psych)
+library(ggbiplot)
+library(ggplot2)
+```
+
+# Importing and Attaching the Linear Regression Model Dataset
+```{r}
+tts_lm <- read_csv("tts_lm.csv", col_types = cols(X1 = col_skip()))
+attach(tts_lm)
+```
+
+## Linear Regression Model
+```{r}
+tts_lm.fit = lm(adoption_rate ~ . - zipcode, data = tts_lm)
+summary(tts_lm.fit)
+# Standardized Coefficients
+std_tts_lm <- lm.beta(tts_lm.fit)
+summary(std_tts_lm)
+```
+
+## Drop zipcode and DV and save a new dataframe
+```{r}
+pca.fit <- subset(tts_lm, select = -c(zipcode, adoption_rate))
+```
+
+### Save the Residuals
+```{r}
+tts_lm$residuals <- residuals(tts_lm.fit)
+```
+
+### Export the Residuals
+```{r}
+write.csv(tts_lm, file = "tts_lm_resid.csv")
+```
+
+# Principle Component Analysis
+## Deciding the Number of Principle Components
+```{r}
+principal <- principal(pca.fit, nfactors = 5, rotate = "none", scores = TRUE)
+principal
+```
+
+## Eigenvalues
+```{r}
+principal$values
+```
+
+## Principal Component Analysis with Varimax Rotation
+```{r}
+principal.varimax <- principal(pca.fit, nfactors = 5, rotate = "varimax", scores = T)
+principal.varimax
+```
+
+### Principle Component Regression with Varimax Rotation
+```{r}
+tts_lm.principal.varimax = lm(tts_lm$adoption_rate ~ principal.varimax$scores[,1] + principal.varimax$scores[,2] + principal.varimax$scores[,3] + principal.varimax$scores[,4] + principal.varimax$scores[,5])
+summary(tts_lm.principal.varimax)
+# Standardized Coefficients
+std_tts_lm.principal.varimax <- lm.beta(tts_lm.principal.varimax)
+summary(std_tts_lm.principal.varimax)
+```
+
+#### Calculate AIC
+```{r}
+AIC(tts_lm.principal.varimax)
+```

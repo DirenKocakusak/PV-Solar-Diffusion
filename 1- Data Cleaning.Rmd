@@ -1,0 +1,67 @@
+---
+title: "Data Cleaning"
+author: "Diren Kocakusak"
+date: "6/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Data used for this analysis is downloaded from Tracking the Sun Project: https://emp.lbl.gov/tracking-the-sun
+
+# Load the Dataset
+```{r}
+library(readr)
+library(stringr)
+library(tidyr)
+tts <- read_csv("tts.csv")
+```
+
+# Data Cleaning & Organizing
+## Subset Residential Buildings and Attach
+```{r}
+as.data.frame(table(tts$`Customer Segment`))
+tts_clean <- tts[which(tts$`Customer Segment` == "RES"), ]
+attach(tts_clean)
+```
+
+## Check for the Missing Values and Wrong ZIP Codes and Clean
+```{r}
+sum(is.na(tts_clean$`Zip Code`))
+tts_clean <- subset(tts_clean, (!is.na(`Zip Code`)))
+length(which(tts_clean$`Zip Code` == "-9999"))
+tts_clean <- tts_clean[which(tts_clean$`Zip Code` != "-9999"), ]
+tts_clean$zipcodecheck <- nchar(tts_clean$`Zip Code`, type = "chars")
+min(tts_clean$zipcodecheck)
+max(tts_clean$zipcodecheck)
+tts_clean$`Zip Code` <- str_pad(tts_clean$`Zip Code`, 5, pad = "0")
+tts_clean <- tts_clean %>% separate(`Zip Code`, c("zipcode", "fourdigit"), sep = 5)
+tts_clean$zipcodecheck <- nchar(tts_clean$zipcode, type = "chars")
+min(tts_clean$zipcodecheck)
+max(tts_clean$zipcodecheck)
+tts_clean <- subset(tts_clean, select = -c(zipcodecheck, fourdigit))
+```
+
+## Convert Date Field
+```{r}
+tts_clean$`Installation Date` <- as.Date(tts_clean$`Installation Date`, "%m/%d/%Y")
+```
+
+## Convert Cost Field and Clean
+```{r}
+sum(is.na(tts_clean$`Total Installed Price`))
+length(which(tts_clean$`Total Installed Price` == "-9999"))
+tts_clean <- tts_clean[which(tts_clean$`Total Installed Price` != "-9999"), ]
+```
+
+## Check for Missing System Size
+```{r}
+sum(is.na(tts_clean$`System Size`))
+length(which(tts_clean$`System Size` == "-9999"))
+```
+
+# Export Cleaned Dataset
+```{r}
+write.csv(tts_clean, file = "tts_clean.csv")
+```
